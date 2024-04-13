@@ -30,10 +30,6 @@ class CellData:
     v1plus: float
 
 
-I = TypeVar("I")
-O = TypeVar("O")
-
-
 def integrate(
     function: Callable[[float], float], left: float, right: float, increment=0.001
 ) -> float:
