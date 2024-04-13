@@ -42,12 +42,19 @@ def integrate(
     return integral
 
 
-def compute_psi(operator: Operator, x0: float) -> Callable[[float], float]:
-    return lambda x: 2 * integrate(
-        function=lambda y: operator.b(y) / (operator.a(y) * operator.rho(y)),
-        left=x0,
-        right=x,
-    )
+def compute_psi(
+    operator: Operator, x0: float, with_cache: bool = False
+) -> Callable[[float], float]:
+    def out(x: float) -> float:
+        return 2 * integrate(
+            function=lambda y: operator.b(y) / (operator.a(y) * operator.rho(y)),
+            left=x0,
+            right=x,
+        )
+
+    if with_cache:
+        out = wraps(out)(cache(out))
+    return out
 
 
 def compute_v0(
@@ -56,10 +63,10 @@ def compute_v0(
     operator: Operator,
     pm: PlusMinus,
     psi: None | Callable[[float], float],
+    with_cache: bool = False,
 ) -> Callable[[float], float]:
     if psi is None:
-        psi_helper = compute_psi(operator=operator, x0=left)
-        psi = wraps(psi_helper)(cache(psi_helper))
+        psi = compute_psi(operator=operator, x0=left, with_cache=True)
 
     def integrand(y: float) -> float:
         return math.exp(psi(y)) / operator.a(y)
@@ -69,9 +76,18 @@ def compute_v0(
 
     denom = integrate_from_to((left, right))
     if pm == PlusMinus.Plus:
-        return lambda x: integrate_from_to((left, x)) / denom
+
+        def out(x: float) -> float:
+            return integrate_from_to((left, x)) / denom
+
     elif pm == PlusMinus.Minus:
-        return lambda x: integrate_from_to((x, right)) / denom
+
+        def out(x: float) -> float:
+            return integrate_from_to((x, right)) / denom
+
+    if with_cache:
+        out = wraps(out)(cache(out))
+    return out
 
 
 def compute_v1(
@@ -82,15 +98,10 @@ def compute_v1(
     psi: None | Callable[[float], float],
     v0: None | Callable[[float], float],
 ) -> Callable[[float], float]:
-    # use 1 memoization for psi and 1 memoization for v0
-    # initialise both here but allow for non memoized
     if psi is None:
-        psi_helper = compute_psi(operator=operator, x0=left)
-        psi = wraps(psi_helper)(cache(psi_helper))
-
+        psi = compute_psi(operator=operator, x0=left, with_cache=True)
     if v0 is None:
-        v0_helper = compute_v0(
-            left=left, right=right, operator=operator, pm=pm, psi=psi
+        v0 = compute_v0(
+            left=left, right=right, operator=operator, pm=pm, psi=psi, with_cache=True
         )
-        v0 = wraps(v0_helper)(cache(v0_helper))
     return lambda _: 0
