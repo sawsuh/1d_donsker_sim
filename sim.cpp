@@ -4,6 +4,7 @@
 #include <iostream>
 #include <iterator>
 #include <random>
+#include <stdexcept>
 #include <unistd.h>
 #include <unordered_map>
 
@@ -45,76 +46,115 @@ public:
   }
 
 private:
-  std::unordered_map<double, double> psi_values;
-  std::unordered_map<double, double> v0plus_helper_values;
+  std::vector<double> psi_values;
+  std::vector<double> v0plus_helper_values;
+  // std::unordered_map<double, double> psi_values;
+  // std::unordered_map<double, double> v0plus_helper_values;
   double integration_inc;
+  int get_index(double x) { return round((x - left) / integration_inc); }
   void gen_psi_table() {
     double integral = 0;
     double y = left;
+    int idx = 0;
     while (y < right) {
       double y_next = y + integration_inc;
       integral +=
           integration_inc *
           (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
-      psi_values[y] = integral;
+      psi_values.push_back(integral);
+      if (idx - get_index(y) != 0) {
+        std::cout << "index mismatch psi" << std::endl;
+      }
+      idx++;
       y = y_next;
     }
   }
   double psi(double x) {
-    if (psi_values.find(x) != psi_values.end()) {
-      return psi_values[x];
+
+    // if (psi_values.find(x) != psi_values.end()) {
+    //   return psi_values[x];
+    // }
+    int position = get_index(x);
+    if (position < psi_values.size()) {
+      return psi_values[position] * 2;
     }
     std::cout << "psi cache miss" << std::endl;
     double integral = 0;
     double y = left;
     while (y < x) {
       double y_next = y + integration_inc;
-      if (psi_values.find(y) != psi_values.end()) {
-        integral = psi_values[y];
+      // if (psi_values.find(y) != psi_values.end()) {
+      //   integral = psi_values[y];
+      //   y = y_next;
+      //   continue;
+      // }
+      int position_y = get_index(y);
+      if (position_y < psi_values.size()) {
+        integral = psi_values[position_y];
         y = y_next;
         continue;
       }
       integral +=
           integration_inc *
           (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
-      psi_values[y] = integral;
+      psi_values[position_y] = integral;
       y = y_next;
     }
-    integral *= 2;
-    psi_values[x] = integral;
-    return integral;
+    if (psi_values.size() != position) {
+      std::cout << "not inserting end of vector" << std::endl;
+    }
+    psi_values.push_back(integral);
+    return integral * 2;
   }
   void gen_v0plus_helper_table() {
     double integral = 0;
     double y = left;
+    int idx = 0;
     while (y < right) {
       double y_next = y + integration_inc;
       integral += integration_inc *
                   (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
-      v0plus_helper_values[y] = integral;
+      v0plus_helper_values.push_back(integral);
+      if (idx - get_index(y) != 0) {
+        throw std::out_of_range("not inserting end of vector for psi");
+      }
+      idx++;
       y = y_next;
     }
   }
   double v0plus_helper_integral(double x) {
-    if (v0plus_helper_values.find(x) != v0plus_helper_values.end()) {
-      return v0plus_helper_values[x];
+    // if (v0plus_helper_values.find(x) != v0plus_helper_values.end()) {
+    //   return v0plus_helper_values[x];
+    // }
+    int position = get_index(x);
+    if (position < v0plus_helper_values.size()) {
+      return v0plus_helper_values[position];
     }
+    std::cout << "v0plus helper cache miss" << std::endl;
     double integral = 0;
     double y = left;
-    std::cout << "v0plus helper cache miss" << std::endl;
     while (y < x) {
       double y_next = y + integration_inc;
-      if (v0plus_helper_values.find(y) != v0plus_helper_values.end()) {
-        integral = v0plus_helper_values[y];
+      // if (v0plus_helper_values.find(y) != v0plus_helper_values.end()) {
+      //   integral = v0plus_helper_values[y];
+      //   y = y_next;
+      //   continue;
+      // }
+      int position_y = get_index(y);
+      if (position_y < v0plus_helper_values.size()) {
+        integral = v0plus_helper_values[position_y];
         y = y_next;
         continue;
       }
       integral += integration_inc *
                   (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
-      v0plus_helper_values[y] = integral;
+      v0plus_helper_values[position_y] = integral;
       y = y_next;
     }
-    v0plus_helper_values[x] = integral;
+    if (v0plus_helper_values.size() != position) {
+      throw std::out_of_range("not inserting end of vector for v0");
+    }
+    v0plus_helper_values.push_back(integral);
     return integral;
   }
   double v0plus(double x) {
@@ -196,7 +236,7 @@ private:
   std::random_device rd;
   std::mt19937 rng{rd()};
   // INPUT grid spec
-  cell get_adjacent(double point) { return cell{point - 0.05, point + 0.05}; }
+  cell get_adjacent(double point) { return cell{point - 0.1, point + 0.1}; }
   cellData get_data(double point) {
     if (cell_cache.find(point) != cell_cache.end()) {
       return cell_cache[point];
