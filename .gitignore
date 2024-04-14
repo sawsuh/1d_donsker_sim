@@ -2,3 +2,5 @@
 venv/*
 *.out
 *.csv
+out
+sim

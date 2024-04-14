@@ -28,7 +28,7 @@ public:
     left = l;
     right = r;
     x = y;
-    integration_inc = 0.0001;
+    integration_inc = 0.001;
   }
   cellData compute_cell_data() {
     double prob_left = v0minus(x);
@@ -196,7 +196,7 @@ private:
   std::unordered_map<double, cellData> cell_cache;
   std::random_device rd;
   std::mt19937 rng{rd()};
-  cell get_adjacent(double point) { return cell{point - 0.005, point + 0.005}; }
+  cell get_adjacent(double point) { return cell{point - 0.1, point + 0.1}; }
   cellData get_data(double point) {
     if (cell_cache.find(point) != cell_cache.end()) {
       return cell_cache[point];
