@@ -28,9 +28,11 @@ public:
     left = l;
     right = r;
     x = y;
-    integration_inc = 0.0001;
+    integration_inc = 0.00001;
   }
   cellData compute_cell_data() {
+    gen_psi_table();
+    gen_v0plus_helper_table();
     double prob_left = v0minus(x);
     double prob_right = v0plus(x);
     double time_left_ind = v1minus(x);
@@ -42,13 +44,8 @@ public:
 private:
   std::unordered_map<double, double> psi_values;
   std::unordered_map<double, double> v0plus_helper_values;
-  std::unordered_map<double, double> v1plus_values;
-  std::unordered_map<double, double> v1minus_values;
   double integration_inc;
-  double psi(double x) {
-    if (psi_values.find(x) != psi_values.end()) {
-      return psi_values[x];
-    }
+  void gen_psi_table() {
     double integral = 0;
     double y = left;
     while (y < right) {
@@ -56,11 +53,44 @@ private:
       integral +=
           integration_inc *
           (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
+      psi_values[y] = integral;
+      y = y_next;
+    }
+  }
+  double psi(double x) {
+    if (psi_values.find(x) != psi_values.end()) {
+      return psi_values[x];
+    }
+    std::cout << "psi cache miss" << std::endl;
+    double integral = 0;
+    double y = left;
+    while (y < x) {
+      double y_next = y + integration_inc;
+      if (psi_values.find(y) != psi_values.end()) {
+        integral = psi_values[y];
+        y = y_next;
+        continue;
+      }
+      integral +=
+          integration_inc *
+          (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
+      psi_values[y] = integral;
       y = y_next;
     }
     integral *= 2;
     psi_values[x] = integral;
     return integral;
+  }
+  void gen_v0plus_helper_table() {
+    double integral = 0;
+    double y = left;
+    while (y < right) {
+      double y_next = y + integration_inc;
+      integral += integration_inc *
+                  (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
+      v0plus_helper_values[y] = integral;
+      y = y_next;
+    }
   }
   double v0plus_helper_integral(double x) {
     if (v0plus_helper_values.find(x) != v0plus_helper_values.end()) {
@@ -68,10 +98,17 @@ private:
     }
     double integral = 0;
     double y = left;
+    std::cout << "v0plus helper cache miss" << std::endl;
     while (y < x) {
       double y_next = y + integration_inc;
+      if (v0plus_helper_values.find(y) != v0plus_helper_values.end()) {
+        integral = v0plus_helper_values[y];
+        y = y_next;
+        continue;
+      }
       integral += integration_inc *
                   (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
+      v0plus_helper_values[y] = integral;
       y = y_next;
     }
     v0plus_helper_values[x] = integral;
@@ -93,9 +130,6 @@ private:
     }
   }
   double v1plus(double x) {
-    if (v1plus_values.find(x) != v1plus_values.end()) {
-      return v1plus_values[x];
-    }
     double integral = 0;
     double y = left;
     while (y < right) {
@@ -107,13 +141,9 @@ private:
           2;
       y = y_next;
     }
-    v1plus_values[x] = integral;
     return integral;
   }
   double v1minus(double x) {
-    if (v1minus_values.find(x) != v1minus_values.end()) {
-      return v1minus_values[x];
-    }
     double integral = 0;
     double y = left;
     while (y < right) {
@@ -125,7 +155,6 @@ private:
           2;
       y = y_next;
     }
-    v1minus_values[x] = integral;
     return integral;
   }
 };
