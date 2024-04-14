@@ -1,6 +1,7 @@
 #include <cmath>
 #include <iostream>
 #include <random>
+#include <unistd.h>
 #include <unordered_map>
 
 enum PlusMinus { plus, minus };
@@ -27,7 +28,7 @@ public:
     left = l;
     right = r;
     x = y;
-    integration_inc = 0.001;
+    integration_inc = 0.0001;
   }
   cellData compute_cell_data() {
     double prob_left = v0minus(x);
@@ -70,8 +71,11 @@ private:
     double integral = 0;
     double y = left;
     while (y < right) {
-      integral += b(y) * integration_inc / (a(y) * rho(y));
-      y += integration_inc;
+      double y_next = y + integration_inc;
+      integral +=
+          integration_inc *
+          (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
+      y = y_next;
     }
     integral *= 2;
     psi_values[x] = integral;
@@ -86,8 +90,10 @@ private:
     double integral = 0;
     double y = left;
     while (y < x) {
-      integral += integration_inc * exp(-psi(y)) / a(y);
-      y += integration_inc;
+      double y_next = y + integration_inc;
+      integral += integration_inc *
+                  (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
+      y = y_next;
     }
     v0plus_helper_values[x] = integral;
     return integral;
@@ -128,8 +134,13 @@ private:
     double integral = 0;
     double y = left;
     while (y < right) {
-      integral += integration_inc * G(x, y) * v0plus(y) * exp(psi(y)) / rho(y);
-      y += integration_inc;
+      double y_next = y + integration_inc;
+      integral +=
+          integration_inc *
+          (G(x, y) * v0plus(y) * exp(psi(y)) / rho(y) +
+           G(x, y_next) * v0plus(y_next) * exp(psi(y_next)) / rho(y_next)) /
+          2;
+      y = y_next;
     }
     v1plus_values[x] = integral;
     return integral;
@@ -142,8 +153,13 @@ private:
     double integral = 0;
     double y = left;
     while (y < right) {
-      integral += integration_inc * G(x, y) * v0minus(y) * exp(psi(y)) / rho(y);
-      y += integration_inc;
+      double y_next = y + integration_inc;
+      integral +=
+          integration_inc *
+          (G(x, y) * v0minus(y) * exp(psi(y)) / rho(y) +
+           G(x, y_next) * v0minus(y_next) * exp(psi(y_next)) / rho(y_next)) /
+          2;
+      y = y_next;
     }
     v1minus_values[x] = integral;
     return integral;
@@ -160,7 +176,7 @@ class Simulator {
 public:
   double start;
   Simulator(double x) { start = x; }
-  std::vector<double> simulate(double t, int rounds = 1000) {
+  void simulate(double t, int rounds = 1000) {
     std::vector<double> out;
     for (auto _ = rounds; _--;) {
       double cur = start;
@@ -173,7 +189,7 @@ public:
       // out.push_back(cur);
       std::cout << cur << std::endl;
     }
-    return out;
+    // return out;
   }
 
 private:
@@ -194,11 +210,18 @@ private:
   increment next_point(double point) {
     cell lr = get_adjacent(point);
     cellData point_data = get_data(point);
+    /* std::cout << "left: " << point_data.prob_left
+              << ", right: " << point_data.prob_right << std::endl; */
     std::bernoulli_distribution d(point_data.prob_right);
+    // sleep(1);
     if (d(rng)) { // exit right
-      return {lr.right, point_data.time_right};
+      /* std::cout << "right from " << point << " to " << lr.right << " in "
+                << point_data.time_right << std::endl; */
+      return increment{lr.right, point_data.time_right};
     } else { // exit left
-      return {lr.left, point_data.time_left};
+      /* std::cout << "left from " << point << " to " << lr.left << "in "
+                << point_data.time_left << std::endl; */
+      return increment{lr.left, point_data.time_left};
     }
   }
 };
@@ -220,6 +243,6 @@ int main() {
   std::cout << "true value: " << -l * r << std::endl; */
 
   Simulator sim(0);
-  sim.simulate(5);
+  sim.simulate(1);
   return 0;
 }
