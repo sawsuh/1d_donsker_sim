@@ -32,7 +32,7 @@ public:
     left = l;
     right = r;
     x = y;
-    integration_inc = 0.0001;
+    integration_inc = 0.00001;
   }
   cellData compute_cell_data() {
     gen_psi_table();
