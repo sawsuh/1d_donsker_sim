@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 import math
 from functools import cache, wraps
+from numba import njit
 
 
 class PlusMinus(Enum):
@@ -28,8 +29,9 @@ class CellData:
     prob: Tuple[float, float]
 
 
+@njit
 def integrate(
-    function: Callable[[float], float], left: float, right: float, increment=0.001
+    function: Callable[[float], float], left: float, right: float, increment=0.0001
 ) -> float:
     # Riemann sums
     x = left
@@ -43,6 +45,7 @@ def integrate(
 def compute_psi(
     operator: Operator, x0: float, with_cache: bool = False
 ) -> Callable[[float], float]:
+    @njit
     def out(x: float) -> float:
         return 2 * integrate(
             function=lambda y: operator.b(y) / (operator.a(y) * operator.rho(y)),
@@ -66,20 +69,24 @@ def compute_v0(
     # if psi is None:
     #     psi = compute_psi(operator=operator, x0=left, with_cache=True)
 
+    @njit
     def integrand(y: float) -> float:
         return math.exp(psi(y)) / operator.a(y)
 
+    @njit
     def integrate_from_to(xy: Tuple[float, float]) -> float:
         return integrate(function=integrand, left=xy[0], right=xy[1])
 
     denom = integrate_from_to((left, right))
     if pm == PlusMinus.Plus:
 
+        @njit
         def out(x: float) -> float:
             return integrate_from_to((left, x)) / denom
 
     elif pm == PlusMinus.Minus:
 
+        @njit
         def out(x: float) -> float:
             return integrate_from_to((x, right)) / denom
 
@@ -104,6 +111,7 @@ def compute_v1(
     #     v0 = compute_v0(
     #         left=left, right=right, operator=operator, pm=pm, psi=psi, with_cache=True
     #     )
+    @njit
     def G(x: float, y: float) -> float:
         if x <= y:
             return (
@@ -120,9 +128,11 @@ def compute_v1(
                 / (v0plus(right) - v0plus(left))
             )
 
+    @njit
     def integrand(x: float, y: float) -> float:
         return G(x, y) * v0(y) * math.exp(psi(y)) / operator.rho(y)
 
+    @njit
     def out(x: float) -> float:
         # print("diagnostics for v1 integrand")
         # print(integrand(x, x + (right - x) / 2))
@@ -136,7 +146,7 @@ def compute_v1(
 
 def compute_celldata(x: float, G: Grid, L: Operator) -> CellData:
     l, r = G.get_adjacent(x)
-    psi = compute_psi(operator=L, x0=l, with_cache=True)
+    psi = compute_psi(operator=L, x0=l, with_cache=False)
     v0plus = compute_v0(
         left=l, right=r, operator=L, psi=psi, with_cache=True, pm=PlusMinus.Plus
     )
@@ -163,5 +173,7 @@ class Simulator:
 
 if __name__ == "__main__":
     L = Operator(a=lambda _: 1, rho=lambda _: 1, b=lambda _: 0)
-    G = Grid(get_adjacent=lambda x: (x - 0.3, x + 0.5))
-    print(compute_celldata(x=0, G=G, L=L))
+    G = Grid(get_adjacent=lambda x: (x - 0.5, x + 0.26))
+    dat = compute_celldata(x=0, G=G, L=L)
+    print(dat)
+    print(dat.prob[0] * dat.time[0] + dat.prob[1] * dat.time[1])
