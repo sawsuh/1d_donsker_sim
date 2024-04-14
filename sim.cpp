@@ -48,8 +48,6 @@ public:
 private:
   std::vector<double> psi_values;
   std::vector<double> v0plus_helper_values;
-  // std::unordered_map<double, double> psi_values;
-  // std::unordered_map<double, double> v0plus_helper_values;
   double integration_inc;
   int get_index(double x) { return round((x - left) / integration_inc); }
   void gen_psi_table() {
@@ -71,9 +69,6 @@ private:
   }
   double psi(double x) {
 
-    // if (psi_values.find(x) != psi_values.end()) {
-    //   return psi_values[x];
-    // }
     int position = get_index(x);
     if (position < psi_values.size()) {
       return psi_values[position] * 2;
@@ -83,11 +78,6 @@ private:
     double y = left;
     while (y < x) {
       double y_next = y + integration_inc;
-      // if (psi_values.find(y) != psi_values.end()) {
-      //   integral = psi_values[y];
-      //   y = y_next;
-      //   continue;
-      // }
       int position_y = get_index(y);
       if (position_y < psi_values.size()) {
         integral = psi_values[position_y];
@@ -126,9 +116,6 @@ private:
     }
   }
   double v0plus_helper_integral(double x) {
-    // if (v0plus_helper_values.find(x) != v0plus_helper_values.end()) {
-    //   return v0plus_helper_values[x];
-    // }
     int position = get_index(x);
     if (position < v0plus_helper_values.size()) {
       return v0plus_helper_values[position];
@@ -138,11 +125,6 @@ private:
     double y = left;
     while (y < x) {
       double y_next = y + integration_inc;
-      // if (v0plus_helper_values.find(y) != v0plus_helper_values.end()) {
-      //   integral = v0plus_helper_values[y];
-      //   y = y_next;
-      //   continue;
-      // }
       int position_y = get_index(y);
       if (position_y < v0plus_helper_values.size()) {
         integral = v0plus_helper_values[position_y];
