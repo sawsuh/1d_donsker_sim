@@ -1,4 +1,4 @@
-from typing import Callable, Tuple, Dict, Generic, TypeVar
+from typing import Callable, Tuple
 from dataclasses import dataclass
 from enum import Enum
 import math
@@ -63,8 +63,6 @@ def compute_v0(
     psi: Callable[[float], float],
     with_cache: bool = False,
 ) -> Callable[[float], float]:
-    # if psi is None:
-    #     psi = compute_psi(operator=operator, x0=left, with_cache=True)
 
     def integrand(y: float) -> float:
         return math.exp(psi(y)) / operator.a(y)
@@ -98,12 +96,6 @@ def compute_v1(
     v0plus: Callable[[float], float],
     with_cache: bool = False,
 ) -> Callable[[float], float]:
-    # if psi is None:
-    #     psi = compute_psi(operator=operator, x0=left, with_cache=True)
-    # if v0 is None:
-    #     v0 = compute_v0(
-    #         left=left, right=right, operator=operator, pm=pm, psi=psi, with_cache=True
-    #     )
     def G(x: float, y: float) -> float:
         if x <= y:
             return (
@@ -124,9 +116,6 @@ def compute_v1(
         return G(x, y) * v0(y) * math.exp(psi(y)) / operator.rho(y)
 
     def out(x: float) -> float:
-        # print("diagnostics for v1 integrand")
-        # print(integrand(x, x + (right - x) / 2))
-        # print(integrand(x, x - (x - left) / 2))
         return integrate(function=lambda y: integrand(x, y), left=left, right=right)
 
     if with_cache:
@@ -149,8 +138,6 @@ def compute_celldata(x: float, G: Grid, L: Operator) -> CellData:
     v1minus = compute_v1(
         left=l, right=r, operator=L, psi=psi, v0=v0minus, v0plus=v0plus, with_cache=True
     )
-    # print(v1plus(x))
-    # print(v1minus(x))
     return CellData(
         time=(v1minus(x) / v0minus(x), v1plus(x) / v0plus(x)),
         prob=(v0minus(x), v0plus(x)),

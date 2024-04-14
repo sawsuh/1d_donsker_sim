@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iostream>
@@ -176,6 +177,7 @@ public:
     for (auto _ = rounds; _--;) {
       double cur = start;
       double t_cur = 0;
+
       while (t_cur < t) {
         increment inc = next_point(cur);
         cur = inc.next_point;
@@ -193,6 +195,7 @@ private:
   std::unordered_map<double, cellData> cell_cache;
   std::random_device rd;
   std::mt19937 rng{rd()};
+  // INPUT grid spec
   cell get_adjacent(double point) { return cell{point - 0.05, point + 0.05}; }
   cellData get_data(double point) {
     if (cell_cache.find(point) != cell_cache.end()) {
@@ -218,7 +221,10 @@ private:
 };
 
 int main() {
-  Simulator sim(0);
-  sim.simulate(1);
+  // INPUT
+  double start = 0;
+  double time = 1;
+  Simulator sim(start);
+  sim.simulate(time);
   return 0;
 }
