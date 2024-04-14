@@ -10,10 +10,13 @@
 
 enum PlusMinus { plus, minus };
 
+// INPUT
+const double INTEGRATION_INC = 0.00001;
+const int ROUNDS = 1000;
+const double START = 0;
+const double TIME = 1;
 double a(double x) { return 1; }
-
 double rho(double x) { return 1; }
-
 double b(double x) { return 0; }
 
 struct cellData {
@@ -32,7 +35,7 @@ public:
     left = l;
     right = r;
     x = y;
-    integration_inc = 0.00001;
+    integration_inc = INTEGRATION_INC;
   }
   cellData compute_cell_data() {
     gen_psi_table();
@@ -196,7 +199,7 @@ class Simulator {
 public:
   double start;
   Simulator(double x) { start = x; }
-  void simulate(double t, int rounds = 1000) {
+  void simulate(double t, int rounds = ROUNDS) {
     std::vector<double> out;
     for (auto _ = rounds; _--;) {
       double cur = start;
@@ -219,8 +222,8 @@ private:
   std::unordered_map<double, cellData> cell_cache;
   std::random_device rd;
   std::mt19937 rng{rd()};
-  // INPUT grid spec
-  cell get_adjacent(double point) { return cell{point - 0.1, point + 0.1}; }
+  // INPUT
+  cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
   cellData get_data(double point) {
     if (cell_cache.find(point) != cell_cache.end()) {
       return cell_cache[point];
@@ -245,10 +248,7 @@ private:
 };
 
 int main() {
-  // INPUT
-  double start = 0;
-  double time = 1;
-  Simulator sim(start);
-  sim.simulate(time);
+  Simulator sim(START);
+  sim.simulate(TIME);
   return 0;
 }
