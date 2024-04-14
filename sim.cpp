@@ -53,17 +53,15 @@ private:
   void gen_psi_table() {
     double integral = 0;
     double y = left;
-    int idx = 0;
     while (y < right) {
       double y_next = y + integration_inc;
       integral +=
           integration_inc *
           (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
-      if (idx - get_index(y) != 0) {
+      if (get_index(y) != psi_values.size()) {
         throw std::out_of_range("index mismatch psi");
       }
       psi_values.push_back(integral);
-      idx++;
       y = y_next;
     }
   }
@@ -102,16 +100,14 @@ private:
   void gen_v0plus_helper_table() {
     double integral = 0;
     double y = left;
-    int idx = 0;
     while (y < right) {
       double y_next = y + integration_inc;
       integral += integration_inc *
                   (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
-      if (idx - get_index(y) != 0) {
+      if (get_index(y) != v0plus_helper_values.size()) {
         throw std::out_of_range("not inserting end of vector for psi");
       }
       v0plus_helper_values.push_back(integral);
-      idx++;
       y = y_next;
     }
   }
