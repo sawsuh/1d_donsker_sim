@@ -32,7 +32,7 @@ public:
     left = l;
     right = r;
     x = y;
-    integration_inc = 0.00001;
+    integration_inc = 0.0001;
   }
   cellData compute_cell_data() {
     gen_psi_table();
@@ -61,10 +61,10 @@ private:
       integral +=
           integration_inc *
           (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
-      psi_values.push_back(integral);
       if (idx - get_index(y) != 0) {
-        std::cout << "index mismatch psi" << std::endl;
+        throw std::out_of_range("index mismatch psi");
       }
+      psi_values.push_back(integral);
       idx++;
       y = y_next;
     }
@@ -97,11 +97,14 @@ private:
       integral +=
           integration_inc *
           (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
-      psi_values[position_y] = integral;
+      if (psi_values.size() != position_y) {
+        throw std::out_of_range("index mismatch psi");
+      }
+      psi_values.push_back(integral);
       y = y_next;
     }
     if (psi_values.size() != position) {
-      std::cout << "not inserting end of vector" << std::endl;
+      throw std::out_of_range("index mismatch psi");
     }
     psi_values.push_back(integral);
     return integral * 2;
@@ -114,10 +117,10 @@ private:
       double y_next = y + integration_inc;
       integral += integration_inc *
                   (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
-      v0plus_helper_values.push_back(integral);
       if (idx - get_index(y) != 0) {
         throw std::out_of_range("not inserting end of vector for psi");
       }
+      v0plus_helper_values.push_back(integral);
       idx++;
       y = y_next;
     }
@@ -148,7 +151,10 @@ private:
       }
       integral += integration_inc *
                   (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
-      v0plus_helper_values[position_y] = integral;
+      if (position_y != v0plus_helper_values.size()) {
+        throw std::out_of_range("not inserting end of vector for v0");
+      }
+      v0plus_helper_values.push_back(integral);
       y = y_next;
     }
     if (v0plus_helper_values.size() != position) {
