@@ -11,7 +11,7 @@
 enum PlusMinus { plus, minus };
 
 // INPUT
-const double INTEGRATION_INC = 0.00001;
+const double INTEGRATION_INC = 0.0001;
 const int ROUNDS = 1000;
 const double START = 0;
 const double TIME = 1;
@@ -25,6 +25,13 @@ struct cellData {
   double prob_left;
   double prob_right;
 };
+
+void push_safe(std::vector<double> &vec, int idx, double x) {
+  if (vec.size() != idx) {
+    throw std::out_of_range("desired location not end of vector");
+  }
+  vec.push_back(x);
+}
 
 class CellDataCalculator {
 public:
@@ -61,10 +68,7 @@ private:
       integral +=
           integration_inc *
           (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
-      if (get_index(y) != psi_values.size()) {
-        throw std::out_of_range("index mismatch psi");
-      }
-      psi_values.push_back(integral);
+      push_safe(psi_values, get_index(y), integral);
       y = y_next;
     }
   }
@@ -88,16 +92,10 @@ private:
       integral +=
           integration_inc *
           (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
-      if (psi_values.size() != position_y) {
-        throw std::out_of_range("index mismatch psi");
-      }
-      psi_values.push_back(integral);
+      push_safe(psi_values, position_y, integral);
       y = y_next;
     }
-    if (psi_values.size() != position) {
-      throw std::out_of_range("index mismatch psi");
-    }
-    psi_values.push_back(integral);
+    push_safe(psi_values, position, integral);
     return integral * 2;
   }
   void gen_v0plus_helper_table() {
@@ -107,10 +105,7 @@ private:
       double y_next = y + integration_inc;
       integral += integration_inc *
                   (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
-      if (get_index(y) != v0plus_helper_values.size()) {
-        throw std::out_of_range("not inserting end of vector for psi");
-      }
-      v0plus_helper_values.push_back(integral);
+      push_safe(v0plus_helper_values, get_index(y), integral);
       y = y_next;
     }
   }
@@ -132,16 +127,10 @@ private:
       }
       integral += integration_inc *
                   (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
-      if (position_y != v0plus_helper_values.size()) {
-        throw std::out_of_range("not inserting end of vector for v0");
-      }
-      v0plus_helper_values.push_back(integral);
+      push_safe(v0plus_helper_values, position_y, integral);
       y = y_next;
     }
-    if (v0plus_helper_values.size() != position) {
-      throw std::out_of_range("not inserting end of vector for v0");
-    }
-    v0plus_helper_values.push_back(integral);
+    push_safe(v0plus_helper_values, position, integral);
     return integral;
   }
   double v0plus(double x) {
