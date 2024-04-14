@@ -24,10 +24,8 @@ class Grid:
 
 @dataclass
 class CellData:
-    v0minus: float
-    v0plus: float
-    v1minus: float
-    v1plus: float
+    time: Tuple[float, float]
+    prob: Tuple[float, float]
 
 
 def integrate(
@@ -62,11 +60,11 @@ def compute_v0(
     right: float,
     operator: Operator,
     pm: PlusMinus,
-    psi: None | Callable[[float], float],
+    psi: Callable[[float], float],
     with_cache: bool = False,
 ) -> Callable[[float], float]:
-    if psi is None:
-        psi = compute_psi(operator=operator, x0=left, with_cache=True)
+    # if psi is None:
+    #     psi = compute_psi(operator=operator, x0=left, with_cache=True)
 
     def integrand(y: float) -> float:
         return math.exp(psi(y)) / operator.a(y)
@@ -94,14 +92,76 @@ def compute_v1(
     left: float,
     right: float,
     operator: Operator,
-    pm: PlusMinus,
-    psi: None | Callable[[float], float],
-    v0: None | Callable[[float], float],
+    # pm: PlusMinus,
+    psi: Callable[[float], float],
+    v0: Callable[[float], float],
+    v0plus: Callable[[float], float],
+    with_cache: bool = False,
 ) -> Callable[[float], float]:
-    if psi is None:
-        psi = compute_psi(operator=operator, x0=left, with_cache=True)
-    if v0 is None:
-        v0 = compute_v0(
-            left=left, right=right, operator=operator, pm=pm, psi=psi, with_cache=True
-        )
-    return lambda _: 0
+    # if psi is None:
+    #     psi = compute_psi(operator=operator, x0=left, with_cache=True)
+    # if v0 is None:
+    #     v0 = compute_v0(
+    #         left=left, right=right, operator=operator, pm=pm, psi=psi, with_cache=True
+    #     )
+    def G(x: float, y: float) -> float:
+        if x <= y:
+            return (
+                2
+                * (v0plus(x) - v0plus(left))
+                * (v0plus(right) - v0plus(y))
+                / (v0plus(right) - v0plus(left))
+            )
+        else:
+            return (
+                2
+                * (v0plus(y) - v0plus(left))
+                * (v0plus(right) - v0plus(x))
+                / (v0plus(right) - v0plus(left))
+            )
+
+    def integrand(x: float, y: float) -> float:
+        return G(x, y) * v0(y) * math.exp(psi(y)) / operator.rho(y)
+
+    def out(x: float) -> float:
+        # print("diagnostics for v1 integrand")
+        # print(integrand(x, x + (right - x) / 2))
+        # print(integrand(x, x - (x - left) / 2))
+        return integrate(function=lambda y: integrand(x, y), left=left, right=right)
+
+    if with_cache:
+        out = wraps(out)(cache(out))
+    return out
+
+
+def compute_celldata(x: float, G: Grid, L: Operator) -> CellData:
+    l, r = G.get_adjacent(x)
+    psi = compute_psi(operator=L, x0=l, with_cache=True)
+    v0plus = compute_v0(
+        left=l, right=r, operator=L, psi=psi, with_cache=True, pm=PlusMinus.Plus
+    )
+    v0minus = compute_v0(
+        left=l, right=r, operator=L, psi=psi, with_cache=True, pm=PlusMinus.Minus
+    )
+    v1plus = compute_v1(
+        left=l, right=r, operator=L, psi=psi, v0=v0plus, v0plus=v0plus, with_cache=True
+    )
+    v1minus = compute_v1(
+        left=l, right=r, operator=L, psi=psi, v0=v0minus, v0plus=v0plus, with_cache=True
+    )
+    # print(v1plus(x))
+    # print(v1minus(x))
+    return CellData(
+        time=(v1minus(x) / v0minus(x), v1plus(x) / v0plus(x)),
+        prob=(v0minus(x), v0plus(x)),
+    )
+
+
+class Simulator:
+    pass
+
+
+if __name__ == "__main__":
+    L = Operator(a=lambda _: 1, rho=lambda _: 1, b=lambda _: 0)
+    G = Grid(get_adjacent=lambda x: (x - 0.3, x + 0.5))
+    print(compute_celldata(x=0, G=G, L=L))
