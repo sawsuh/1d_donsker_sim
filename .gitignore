@@ -1,3 +1,4 @@
 *.vim
 venv/*
 *.out
+*.csv
