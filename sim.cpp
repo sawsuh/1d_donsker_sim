@@ -1,5 +1,7 @@
 #include <cmath>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <random>
 #include <unistd.h>
 #include <unordered_map>
@@ -180,18 +182,23 @@ public:
         t_cur += inc.delta_t;
       }
       std::cout << cur << std::endl;
+      out.push_back(cur);
     }
+    std::ofstream output_file("res.csv");
+    std::ostream_iterator<double> output_iterator(output_file, "\n");
+    std::copy(std::begin(out), std::end(out), output_iterator);
   }
 
 private:
   std::unordered_map<double, cellData> cell_cache;
   std::random_device rd;
   std::mt19937 rng{rd()};
-  cell get_adjacent(double point) { return cell{point - 0.1, point + 0.1}; }
+  cell get_adjacent(double point) { return cell{point - 0.05, point + 0.05}; }
   cellData get_data(double point) {
     if (cell_cache.find(point) != cell_cache.end()) {
       return cell_cache[point];
     }
+    std::cout << "cell cache miss" << std::endl;
     cell lr = get_adjacent(point);
     CellDataCalculator calc(lr.left, lr.right, point);
     cellData out = calc.compute_cell_data();
