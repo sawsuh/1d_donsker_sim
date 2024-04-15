@@ -211,7 +211,7 @@ public:
       std::cout << cur << std::endl;
 #else
       if ((rounds - idx) % print_interval == 0) {
-        std::cout << "round " << idx << std::endl;
+        std::cout << "finished round " << rounds - idx << std::endl;
       }
 #endif
       out.push_back(cur);
