@@ -11,8 +11,9 @@
 enum PlusMinus { plus, minus };
 
 // INPUT
-const double INTEGRATION_INC = 0.0001;
 const int ROUNDS = 1000;
+const int PRINT_INTERVAL = 100;
+const double INTEGRATION_INC = 0.0001;
 const double START = 0;
 const double TIME = 1;
 double a(double x) { return 1; }
@@ -79,7 +80,7 @@ private:
     if (position < psi_values.size()) {
       return psi_values[position] * 2;
     }
-    std::cout << "psi cache miss" << std::endl;
+    // std::cout << "psi cache miss" << std::endl;
     double integral = 0;
     double y = left;
     while (y < x) {
@@ -116,7 +117,7 @@ private:
     if (position < v0plus_helper_values.size()) {
       return v0plus_helper_values[position];
     }
-    std::cout << "v0plus helper cache miss" << std::endl;
+    // std::cout << "v0plus helper cache miss" << std::endl;
     double integral = 0;
     double y = left;
     while (y < x) {
@@ -190,18 +191,23 @@ class Simulator {
 public:
   double start;
   Simulator(double x) { start = x; }
-  void simulate(double t, int rounds = ROUNDS) {
+  void simulate(double t, int rounds = ROUNDS,
+                int print_interval = PRINT_INTERVAL) {
     std::vector<double> out;
-    for (auto _ = rounds; _--;) {
+    for (auto idx = rounds; idx--;) {
       double cur = start;
       double t_cur = 0;
+
+      if ((rounds - idx) % print_interval == 0) {
+        std::cout << "round " << idx << std::endl;
+      }
 
       while (t_cur < t) {
         increment inc = next_point(cur);
         cur = inc.next_point;
         t_cur += inc.delta_t;
       }
-      std::cout << cur << std::endl;
+      // std::cout << cur << std::endl;
       out.push_back(cur);
     }
     std::ofstream output_file("res.csv");
@@ -219,7 +225,7 @@ private:
     if (cell_cache.find(point) != cell_cache.end()) {
       return cell_cache[point];
     }
-    std::cout << "cell cache miss" << std::endl;
+    // std::cout << "cell cache miss" << std::endl;
     cell lr = get_adjacent(point);
     CellDataCalculator calc(lr.left, lr.right, point);
     cellData out = calc.compute_cell_data();
