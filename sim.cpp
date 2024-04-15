@@ -80,7 +80,9 @@ private:
     if (position < psi_values.size()) {
       return psi_values[position] * 2;
     }
-    // std::cout << "psi cache miss" << std::endl;
+#ifdef _DEBUG
+    std::cout << "psi cache miss" << std::endl;
+#endif
     double integral = 0;
     double y = left;
     while (y < x) {
@@ -117,7 +119,9 @@ private:
     if (position < v0plus_helper_values.size()) {
       return v0plus_helper_values[position];
     }
-    // std::cout << "v0plus helper cache miss" << std::endl;
+#ifdef _DEBUG
+    std::cout << "v0plus helper cache miss" << std::endl;
+#endif
     double integral = 0;
     double y = left;
     while (y < x) {
@@ -198,16 +202,18 @@ public:
       double cur = start;
       double t_cur = 0;
 
-      if ((rounds - idx) % print_interval == 0) {
-        std::cout << "round " << idx << std::endl;
-      }
-
       while (t_cur < t) {
         increment inc = next_point(cur);
         cur = inc.next_point;
         t_cur += inc.delta_t;
       }
-      // std::cout << cur << std::endl;
+#ifdef _DEBUG
+      std::cout << cur << std::endl;
+#else
+      if ((rounds - idx) % print_interval == 0) {
+        std::cout << "round " << idx << std::endl;
+      }
+#endif
       out.push_back(cur);
     }
     std::ofstream output_file("res.csv");
@@ -225,7 +231,9 @@ private:
     if (cell_cache.find(point) != cell_cache.end()) {
       return cell_cache[point];
     }
-    // std::cout << "cell cache miss" << std::endl;
+#ifdef _DEBUG
+    std::cout << "cell cache miss" << std::endl;
+#endif
     cell lr = get_adjacent(point);
     CellDataCalculator calc(lr.left, lr.right, point);
     cellData out = calc.compute_cell_data();
