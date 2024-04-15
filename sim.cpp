@@ -226,7 +226,14 @@ private:
   std::random_device rd;
   std::mt19937 rng{rd()};
   // INPUT
-  cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
+  cell get_adjacent(double point) {
+    double idx_uns = sqrt(std::abs(point));
+    int sign = 2 * int(point >= 0) - 1;
+    double idx = idx_uns * sign;
+    double inc = 0.05;
+    return cell{(idx - inc) * (idx - inc) * (2 * int(idx - inc >= 0) - 1),
+                (idx + inc) * (idx + inc) * (2 * int(idx + inc >= 0) - 1)};
+  }
   cellData get_data(double point) {
     if (cell_cache.find(point) != cell_cache.end()) {
       return cell_cache[point];
