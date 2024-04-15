@@ -61,6 +61,7 @@ private:
   double integration_inc;
   int get_index(double x) { return round((x - left) / integration_inc); }
   void gen_psi_table() {
+    psi_values.reserve(get_index(right));
     double integral = 0;
     double y = left;
     while (y < right) {
@@ -99,6 +100,7 @@ private:
     return integral * 2;
   }
   void gen_v0plus_helper_table() {
+    v0plus_helper_values.reserve(get_index(right));
     double integral = 0;
     double y = left;
     while (y < right) {
