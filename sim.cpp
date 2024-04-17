@@ -17,9 +17,9 @@
 enum PlusMinus { plus, minus };
 
 // INPUT
-const int ROUNDS = 4;
+const int ROUNDS = 1000;
 const int PRINT_INTERVAL = 100;
-const double INTEGRATION_INC = 0.000001;
+const double INTEGRATION_INC = 0.0001;
 const double START = 0;
 const double TIME = 1;
 double a(double x) { return 1; }
@@ -28,7 +28,7 @@ double b(double x) { return 0; }
 struct cell {
   double left, right;
 };
-cell get_adjacent(double point) { return cell{point - 0.2, point + 0.2}; }
+cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
 
 struct cellData {
   double time_left;
@@ -201,6 +201,7 @@ private:
 
 struct increment {
   double next_point, delta_t;
+  int change_grid_idx;
 };
 struct cellJob {
   std::unique_ptr<std::condition_variable> cv;
@@ -234,21 +235,24 @@ public:
   }
 
 private:
-  std::map<double, cellData> cell_cache;
-  std::random_device rd;
-  std::mt19937 rng{rd()};
+  std::unordered_map<int, cellData> cell_cache;
   std::mutex cell_cache_mutex;
-  std::map<double, cellJob> current_cell_jobs;
+  std::unordered_map<int, cellJob> current_cell_jobs;
   std::mutex current_cell_jobs_mutex;
   std::mutex results_mutex;
   std::mutex cout_mutex;
-  cellData get_data(double point, int idx = 0) {
+  cellData get_data(double point, int grid_idx, int idx = 0) {
     std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
 
     std::unique_lock<std::mutex> cache_lock(cell_cache_mutex);
-    if (cell_cache.find(point) != cell_cache.end()) { // cell in cache
+    if (cell_cache.find(grid_idx) != cell_cache.end()) { // cell in cache
+#ifdef _DEBUG_VERBOSE
+      lk.lock();
+      std::cout << idx << " is at " << point << " cell cache hit" << std::endl;
+      lk.unlock();
+#endif
       cache_lock.unlock();
-      return cell_cache.at(point);
+      return cell_cache.at(grid_idx);
     }
     cache_lock.unlock();
 #ifdef _DEBUG_VERBOSE
@@ -257,19 +261,19 @@ private:
     lk.unlock();
 #endif
     std::unique_lock<std::mutex> jobs_lock(current_cell_jobs_mutex);
-    if (current_cell_jobs.find(point) != current_cell_jobs.end()) {
+    if (current_cell_jobs.find(grid_idx) != current_cell_jobs.end()) {
       jobs_lock.unlock();
       // cell not in cache but job running
       std::unique_lock<std::mutex> job_wait_lock(
-          *current_cell_jobs.at(point).m);
+          *current_cell_jobs.at(grid_idx).m);
 #ifdef _DEBUG_VERBOSE
       lk.lock();
       std::cout << idx << " is at " << point << " job ongoing, waiting"
                 << std::endl;
       lk.unlock();
 #endif
-      while (!current_cell_jobs.at(point).done) {
-        current_cell_jobs.at(point).cv->wait(job_wait_lock);
+      while (!current_cell_jobs.at(grid_idx).done) {
+        current_cell_jobs.at(grid_idx).cv->wait(job_wait_lock);
       }
 #ifdef _DEBUG_VERBOSE
       lk.lock();
@@ -277,7 +281,7 @@ private:
       lk.unlock();
 #endif
       cache_lock.lock();
-      return cell_cache.at(point);
+      return cell_cache.at(grid_idx);
       cache_lock.unlock();
     }
     // cell not in cache and no job
@@ -290,9 +294,10 @@ private:
 
     // place job in joblist
     current_cell_jobs.insert(
-        {point, cellJob{std::unique_ptr<std::condition_variable>(
-                            new std::condition_variable),
-                        std::unique_ptr<std::mutex>(new std::mutex)}});
+        {grid_idx,
+         cellJob{std::unique_ptr<std::condition_variable>(
+                     new std::condition_variable),
+                 std::unique_ptr<std::mutex>(new std::mutex), false}});
 #ifdef _DEBUG_VERBOSE
     lk.lock();
     std::cout << idx << " is at " << point << " placed job in joblist"
@@ -312,7 +317,7 @@ private:
     lk.unlock();
 #endif
     cache_lock.lock();
-    cell_cache.insert({point, out});
+    cell_cache.insert({grid_idx, out});
     cache_lock.unlock();
 
 #ifdef _DEBUG_VERBOSE
@@ -322,9 +327,10 @@ private:
     lk.unlock();
 #endif
     jobs_lock.lock();
-    std::unique_lock<std::mutex> cur_job_lock(*current_cell_jobs.at(point).m);
-    current_cell_jobs.at(point).done = true;
-    current_cell_jobs.at(point).cv->notify_all();
+    std::unique_lock<std::mutex> cur_job_lock(
+        *current_cell_jobs.at(grid_idx).m);
+    current_cell_jobs.at(grid_idx).done = true;
+    current_cell_jobs.at(grid_idx).cv->notify_all();
     cur_job_lock.unlock();
     jobs_lock.unlock();
 
@@ -336,20 +342,25 @@ private:
 #endif
     return out;
   }
-  increment next_point(double point, int idx = 0) {
+  increment next_point(double point, std::mt19937 &rng, int grid_idx,
+                       int idx = 0) {
     cell lr = get_adjacent(point);
-    cellData point_data = get_data(point, idx);
+    cellData point_data = get_data(point, grid_idx, idx);
     std::bernoulli_distribution d(point_data.prob_right);
     if (d(rng)) { // exit right
-      return increment{lr.right, point_data.time_right};
+      return increment{lr.right, point_data.time_right, 1};
     } else { // exit left
-      return increment{lr.left, point_data.time_left};
+      return increment{lr.left, point_data.time_left, -1};
     }
   }
   void run_sim(double t, int idx) {
     double cur = start;
     double t_cur = 0;
     std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
+    std::random_device rd;
+    std::mt19937 rng{rd()};
+
+    int grid_idx = 0;
 
     while (t_cur < t) {
 #ifdef _DEBUG_VERBOSE
@@ -357,8 +368,9 @@ private:
       std::cout << idx << " is at " << cur << " at time " << t_cur << std::endl;
       lk.unlock();
 #endif
-      increment inc = next_point(cur, idx);
+      increment inc = next_point(cur, rng, grid_idx, idx);
       cur = inc.next_point;
+      grid_idx += inc.change_grid_idx;
       t_cur += inc.delta_t;
     }
 
