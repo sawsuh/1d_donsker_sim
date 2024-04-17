@@ -11,13 +11,14 @@
 #include <random>
 #include <set>
 #include <stdexcept>
+#include <type_traits>
 #include <unistd.h>
 #include <unordered_map>
 
 enum PlusMinus { plus, minus };
 
 // INPUT
-const int ROUNDS = 700;
+const int ROUNDS = 3000;
 const int PRINT_INTERVAL = 100;
 const double INTEGRATION_INC = 0.0001;
 const double START = 0;
@@ -37,7 +38,7 @@ struct cellData {
   double prob_right;
 };
 
-void push_safe(std::vector<double> &vec, int idx, double x) {
+template <typename DT> void push_safe(std::vector<DT> &vec, int idx, DT x) {
   if (vec.size() != idx) {
     throw std::out_of_range("desired location not end of vector");
   }
@@ -208,6 +209,34 @@ struct cellJob {
   std::unique_ptr<std::mutex> m;
   bool done;
 };
+template <typename DT> class double_vec {
+public:
+  void insert(int idx, DT x) {
+    if ((idx >= 0) && (idx == right.size())) {
+      right.push_back(std::move(x));
+    } else if ((idx < 0) && (-1 - idx == left.size())) {
+      left.push_back(std::move(x));
+    } else {
+      throw std::out_of_range("past end");
+    }
+  }
+  DT &at(int idx) {
+    if (idx >= 0) {
+      return right.at(idx);
+    } else {
+      return left.at(-1 - idx);
+    }
+  }
+  bool contains(int idx) {
+    return (((idx >= 0) && (idx < right.size())) ||
+            ((idx < 0) && (-1 - idx < left.size())));
+  }
+
+private:
+  std::vector<DT> left;
+  std::vector<DT> right;
+};
+
 class Simulator {
 public:
   double start;
@@ -235,9 +264,9 @@ public:
   }
 
 private:
-  std::unordered_map<int, cellData> cell_cache;
+  double_vec<cellData> cell_cache;
   std::mutex cell_cache_mutex;
-  std::unordered_map<int, cellJob> current_cell_jobs;
+  double_vec<cellJob> current_cell_jobs;
   std::mutex current_cell_jobs_mutex;
   std::mutex results_mutex;
   std::mutex cout_mutex;
@@ -245,7 +274,7 @@ private:
     std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
 
     std::unique_lock<std::mutex> cache_lock(cell_cache_mutex);
-    if (cell_cache.find(grid_idx) != cell_cache.end()) { // cell in cache
+    if (cell_cache.contains(grid_idx)) { // cell in cache
 #ifdef _DEBUG_VERBOSE
       lk.lock();
       std::cout << idx << " is at " << point << " cell cache hit" << std::endl;
@@ -261,7 +290,7 @@ private:
     lk.unlock();
 #endif
     std::unique_lock<std::mutex> jobs_lock(current_cell_jobs_mutex);
-    if (current_cell_jobs.find(grid_idx) != current_cell_jobs.end()) {
+    if (current_cell_jobs.contains(grid_idx)) {
       jobs_lock.unlock();
       // cell not in cache but job running
       std::unique_lock<std::mutex> job_wait_lock(
@@ -280,9 +309,7 @@ private:
       std::cout << idx << " is at " << point << " waited job done" << std::endl;
       lk.unlock();
 #endif
-      cache_lock.lock();
       return cell_cache.at(grid_idx);
-      cache_lock.unlock();
     }
     // cell not in cache and no job
 #ifdef _DEBUG_VERBOSE
@@ -294,10 +321,9 @@ private:
 
     // place job in joblist
     current_cell_jobs.insert(
-        {grid_idx,
-         cellJob{std::unique_ptr<std::condition_variable>(
-                     new std::condition_variable),
-                 std::unique_ptr<std::mutex>(new std::mutex), false}});
+        grid_idx, cellJob{std::unique_ptr<std::condition_variable>(
+                              new std::condition_variable),
+                          std::unique_ptr<std::mutex>(new std::mutex), false});
 #ifdef _DEBUG_VERBOSE
     lk.lock();
     std::cout << idx << " is at " << point << " placed job in joblist"
@@ -317,7 +343,7 @@ private:
     lk.unlock();
 #endif
     cache_lock.lock();
-    cell_cache.insert({grid_idx, out});
+    cell_cache.insert(grid_idx, out);
     cache_lock.unlock();
 
 #ifdef _DEBUG_VERBOSE
