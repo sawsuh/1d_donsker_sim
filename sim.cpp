@@ -1,9 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <condition_variable>
-#include <exception>
 #include <fstream>
-#include <functional>
 #include <future>
 #include <iostream>
 #include <iterator>
@@ -19,9 +17,9 @@
 enum PlusMinus { plus, minus };
 
 // INPUT
-const int ROUNDS = 5000;
+const int ROUNDS = 4;
 const int PRINT_INTERVAL = 100;
-const double INTEGRATION_INC = 0.0001;
+const double INTEGRATION_INC = 0.000001;
 const double START = 0;
 const double TIME = 1;
 double a(double x) { return 1; }
@@ -30,7 +28,7 @@ double b(double x) { return 0; }
 struct cell {
   double left, right;
 };
-cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
+cell get_adjacent(double point) { return cell{point - 0.2, point + 0.2}; }
 
 struct cellData {
   double time_left;
