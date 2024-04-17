@@ -63,6 +63,7 @@ private:
   int get_index(double x) { return round((x - left) / integration_inc); }
   void gen_psi_table() {
     psi_values.reserve(get_index(right));
+    psi_values.push_back(0);
     double integral = 0;
     double y = left;
     while (y < right) {
@@ -70,7 +71,7 @@ private:
       integral +=
           integration_inc *
           (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
-      push_safe(psi_values, get_index(y), integral);
+      push_safe(psi_values, get_index(y_next), integral);
       y = y_next;
     }
   }
@@ -87,7 +88,7 @@ private:
     double y = left;
     while (y < x) {
       double y_next = y + integration_inc;
-      int position_y = get_index(y);
+      int position_y = get_index(y_next);
       if (position_y < psi_values.size()) {
         integral = psi_values[position_y];
         y = y_next;
@@ -104,13 +105,14 @@ private:
   }
   void gen_v0plus_helper_table() {
     v0plus_helper_values.reserve(get_index(right));
+    v0plus_helper_values.push_back(0);
     double integral = 0;
     double y = left;
     while (y < right) {
       double y_next = y + integration_inc;
       integral += integration_inc *
                   (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
-      push_safe(v0plus_helper_values, get_index(y), integral);
+      push_safe(v0plus_helper_values, get_index(y_next), integral);
       y = y_next;
     }
   }
@@ -126,7 +128,7 @@ private:
     double y = left;
     while (y < x) {
       double y_next = y + integration_inc;
-      int position_y = get_index(y);
+      int position_y = get_index(y_next);
       if (position_y < v0plus_helper_values.size()) {
         integral = v0plus_helper_values[position_y];
         y = y_next;
