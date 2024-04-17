@@ -11,14 +11,18 @@
 enum PlusMinus { plus, minus };
 
 // INPUT
-const int ROUNDS = 1000;
+const int ROUNDS = 5000;
 const int PRINT_INTERVAL = 100;
-const double INTEGRATION_INC = 0.000001;
+const double INTEGRATION_INC = 0.0001;
 const double START = 0;
 const double TIME = 1;
 double a(double x) { return 1; }
 double rho(double x) { return 1; }
 double b(double x) { return 0; }
+struct cell {
+  double left, right;
+};
+cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
 
 struct cellData {
   double time_left;
@@ -189,9 +193,6 @@ private:
   }
 };
 
-struct cell {
-  double left, right;
-};
 struct increment {
   double next_point, delta_t;
 };
@@ -230,7 +231,6 @@ private:
   std::random_device rd;
   std::mt19937 rng{rd()};
   // INPUT
-  cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
   cellData get_data(double point) {
     if (cell_cache.find(point) != cell_cache.end()) {
       return cell_cache[point];
