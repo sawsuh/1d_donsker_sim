@@ -273,17 +273,15 @@ private:
   cellData get_data(double point, int grid_idx, int idx = 0) {
     std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
 
-    std::unique_lock<std::mutex> cache_lock(cell_cache_mutex);
+    std::unique_lock<std::mutex> cache_lock(cell_cache_mutex, std::defer_lock);
     if (cell_cache.contains(grid_idx)) { // cell in cache
 #ifdef _DEBUG_VERBOSE
       lk.lock();
       std::cout << idx << " is at " << point << " cell cache hit" << std::endl;
       lk.unlock();
 #endif
-      cache_lock.unlock();
       return cell_cache.at(grid_idx);
     }
-    cache_lock.unlock();
 #ifdef _DEBUG_VERBOSE
     lk.lock();
     std::cout << idx << " is at " << point << " cell cache miss" << std::endl;
