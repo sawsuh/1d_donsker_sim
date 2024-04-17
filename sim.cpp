@@ -1,9 +1,17 @@
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
+#include <exception>
 #include <fstream>
+#include <functional>
+#include <future>
 #include <iostream>
 #include <iterator>
+#include <map>
+#include <memory>
+#include <mutex>
 #include <random>
+#include <set>
 #include <stdexcept>
 #include <unistd.h>
 #include <unordered_map>
@@ -11,9 +19,9 @@
 enum PlusMinus { plus, minus };
 
 // INPUT
-const int ROUNDS = 1000;
+const int ROUNDS = 8;
 const int PRINT_INTERVAL = 100;
-const double INTEGRATION_INC = 0.0001;
+const double INTEGRATION_INC = 0.000001;
 const double START = 0;
 const double TIME = 1;
 double a(double x) { return 1; }
@@ -195,53 +203,126 @@ struct cell {
 struct increment {
   double next_point, delta_t;
 };
+struct cellJob {
+  std::unique_ptr<std::condition_variable> cv;
+  std::unique_ptr<std::mutex> m;
+};
 class Simulator {
 public:
   double start;
   Simulator(double x) { start = x; }
+  std::vector<double> results;
   void simulate(double t, int rounds = ROUNDS,
                 int print_interval = PRINT_INTERVAL) {
-    std::vector<double> out;
-    for (auto idx = rounds; idx--;) {
-      double cur = start;
-      double t_cur = 0;
-
-      while (t_cur < t) {
-        increment inc = next_point(cur);
-        cur = inc.next_point;
-        t_cur += inc.delta_t;
-      }
-#ifdef _DEBUG
-      std::cout << cur << std::endl;
-#else
-      if ((rounds - idx) % print_interval == 0) {
-        std::cout << "finished round " << rounds - idx << std::endl;
-      }
-#endif
-      out.push_back(cur);
+    std::vector<std::thread> threads;
+    for (int idx = 0; idx < rounds; idx++) {
+      threads.push_back(std::thread(&Simulator::run_sim, this, t));
+      threads[idx].join();
     }
+    // for (auto it = std::begin(threads); it != std::end(threads); ++it) {
+    //   it->join();
+    // }
     std::ofstream output_file("res.csv");
     std::ostream_iterator<double> output_iterator(output_file, "\n");
-    std::copy(std::begin(out), std::end(out), output_iterator);
+    std::copy(std::begin(results), std::end(results), output_iterator);
   }
 
 private:
-  std::unordered_map<double, cellData> cell_cache;
+  std::map<double, cellData> cell_cache;
   std::random_device rd;
   std::mt19937 rng{rd()};
+  std::mutex cell_cache_mutex;
+  std::map<double, cellJob> current_cell_jobs;
+  std::mutex current_cell_jobs_mutex;
+  std::mutex results_mutex;
   // INPUT
   cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
   cellData get_data(double point) {
-    if (cell_cache.find(point) != cell_cache.end()) {
-      return cell_cache[point];
+
+    std::unique_lock<std::mutex> cache_lock(cell_cache_mutex);
+    if (cell_cache.find(point) != cell_cache.end()) { // cell in cache
+      try {
+        cache_lock.unlock();
+        return cell_cache.at(point);
+      } catch (const std::out_of_range &e) {
+        std::cerr << "failed at pulling cell from cache" << std::endl;
+        throw e;
+      }
     }
 #ifdef _DEBUG
-    std::cout << "cell cache miss" << std::endl;
+    std::cerr << "cell cache miss" << std::endl;
 #endif
+    std::unique_lock<std::mutex> jobs_lock(current_cell_jobs_mutex);
+    if (current_cell_jobs.find(point) != current_cell_jobs.end()) {
+      // cell not in cache but job running
+#ifdef _DEBUG
+      std::cerr << "job ongoing, waiting" << std::endl;
+#endif
+      jobs_lock.unlock();
+      try {
+        std::unique_lock<std::mutex> job_wait_lock(
+            *current_cell_jobs.at(point).m);
+        current_cell_jobs.at(point).cv->wait(job_wait_lock);
+      } catch (const std::out_of_range &e) {
+        std::cerr << "failed at waiting for current job" << std::endl;
+        throw e;
+      }
+#ifdef _DEBUG
+      std::cerr << "waited job done" << std::endl;
+#endif
+      try {
+        return cell_cache.at(point);
+      } catch (const std::out_of_range &e) {
+        std::cerr << "failed at returning after waited job finished"
+                  << std::endl;
+        throw e;
+      }
+    }
+    // cell not in cache and no job
+#ifdef _DEBUG
+    std::cout << "no job ongoing, doing work" << std::endl;
+#endif
+
+    // place job in joblist
+    current_cell_jobs.insert(
+        {point, cellJob{std::unique_ptr<std::condition_variable>(
+                            new std::condition_variable),
+                        std::unique_ptr<std::mutex>(new std::mutex)}});
+    jobs_lock.unlock();
+#ifdef _DEBUG
+    std::cout << "placed job in joblist" << std::endl;
+#endif
+    // job in joblist
+
     cell lr = get_adjacent(point);
     CellDataCalculator calc(lr.left, lr.right, point);
     cellData out = calc.compute_cell_data();
-    cell_cache[point] = out;
+#ifdef _DEBUG
+    std::cout << "finished job, writing" << std::endl;
+#endif
+    cell_cache.insert({point, out});
+    cache_lock.unlock();
+
+    jobs_lock.lock();
+#ifdef _DEBUG
+    std::cout << "written, notifying" << std::endl;
+#endif
+    try {
+      current_cell_jobs.at(point).cv->notify_all();
+    } catch (const std::out_of_range &e) {
+      std::cerr << "NO POINT NOTIFY" << std::endl;
+      throw e;
+    }
+    try {
+      current_cell_jobs.erase(point);
+    } catch (const std::out_of_range &e) {
+      std::cerr << "failed at erasing" << std::endl;
+      throw e;
+    }
+
+#ifdef _DEBUG
+    std::cout << "notified and erased" << std::endl;
+#endif
     return out;
   }
   increment next_point(double point) {
@@ -253,6 +334,22 @@ private:
     } else { // exit left
       return increment{lr.left, point_data.time_left};
     }
+  }
+  void run_sim(double t) {
+    double cur = start;
+    double t_cur = 0;
+
+    while (t_cur < t) {
+      increment inc = next_point(cur);
+      cur = inc.next_point;
+      t_cur += inc.delta_t;
+    }
+
+#ifdef _DEBUG
+    std::cout << cur << std::endl;
+#endif
+    std::unique_lock<std::mutex> res_lock(results_mutex);
+    results.push_back(cur);
   }
 };
 

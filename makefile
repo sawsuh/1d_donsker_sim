@@ -5,5 +5,5 @@ compile:
 compile_debug:
 	clang++ -Wall -g -O3 -D _DEBUG sim.cpp -o sim
 run_check:
-	time ./sim
+	time ./sim 2> ./log.txt
 	Rscript ./analyse.R
