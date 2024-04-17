@@ -13,7 +13,7 @@ enum PlusMinus { plus, minus };
 // INPUT
 const int ROUNDS = 1000;
 const int PRINT_INTERVAL = 100;
-const double INTEGRATION_INC = 0.0001;
+const double INTEGRATION_INC = 0.000001;
 const double START = 0;
 const double TIME = 1;
 double a(double x) { return 1; }
