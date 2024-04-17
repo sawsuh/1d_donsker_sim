@@ -81,9 +81,9 @@ private:
     if (position < psi_values.size()) {
       return psi_values[position] * 2;
     }
-#ifdef _DEBUG
-    std::cout << "psi cache miss" << std::endl;
-#endif
+#ifndef _SAFE
+    throw std::out_of_range("psi cache miss");
+#else
     double integral = 0;
     double y = left;
     while (y < x) {
@@ -102,6 +102,7 @@ private:
     }
     push_safe(psi_values, position, integral);
     return integral * 2;
+#endif
   }
   void gen_v0plus_helper_table() {
     v0plus_helper_values.reserve(get_index(right));
@@ -121,9 +122,9 @@ private:
     if (position < v0plus_helper_values.size()) {
       return v0plus_helper_values[position];
     }
-#ifdef _DEBUG
-    std::cout << "v0plus helper cache miss" << std::endl;
-#endif
+#ifndef _SAFE
+    throw std::out_of_range("v0plus helper cache miss");
+#else
     double integral = 0;
     double y = left;
     while (y < x) {
@@ -141,6 +142,7 @@ private:
     }
     push_safe(v0plus_helper_values, position, integral);
     return integral;
+#endif
   }
   double v0plus(double x) {
     return v0plus_helper_integral(x) / v0plus_helper_integral(right);
