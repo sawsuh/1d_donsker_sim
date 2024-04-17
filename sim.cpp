@@ -19,9 +19,9 @@
 enum PlusMinus { plus, minus };
 
 // INPUT
-const int ROUNDS = 1000;
+const int ROUNDS = 5000;
 const int PRINT_INTERVAL = 100;
-const double INTEGRATION_INC = 0.000001;
+const double INTEGRATION_INC = 0.0001;
 const double START = 0;
 const double TIME = 1;
 double a(double x) { return 1; }
@@ -30,7 +30,7 @@ double b(double x) { return 0; }
 struct cell {
   double left, right;
 };
-cell get_adjacent(double point) { return cell{point - 0.2, point + 0.2}; }
+cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
 
 struct cellData {
   double time_left;
@@ -207,6 +207,7 @@ struct increment {
 struct cellJob {
   std::unique_ptr<std::condition_variable> cv;
   std::unique_ptr<std::mutex> m;
+  bool done;
 };
 class Simulator {
 public:
@@ -219,9 +220,15 @@ public:
     for (int idx = 0; idx < rounds; idx++) {
       threads.push_back(std::thread(&Simulator::run_sim, this, t, idx));
       // threads[idx].join();
+#ifdef _DEBUG
+      std::cout << "spawned " << idx << std::endl;
+#endif
     }
-    for (auto it = std::begin(threads); it != std::end(threads); ++it) {
-      it->join();
+    for (int idx = 0; idx < rounds; idx++) {
+      threads[idx].join();
+#ifdef _DEBUG
+      std::cout << "joined " << idx << std::endl;
+#endif
     }
     std::ofstream output_file("res.csv");
     std::ostream_iterator<double> output_iterator(output_file, "\n");
@@ -238,17 +245,12 @@ private:
   std::mutex results_mutex;
   std::mutex cout_mutex;
   cellData get_data(double point, int idx = 0) {
+    std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
 
     std::unique_lock<std::mutex> cache_lock(cell_cache_mutex);
-    std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
     if (cell_cache.find(point) != cell_cache.end()) { // cell in cache
-      try {
-        cache_lock.unlock();
-        return cell_cache.at(point);
-      } catch (const std::out_of_range &e) {
-        std::cerr << point << " failed at pulling cell from cache" << std::endl;
-        throw e;
-      }
+      cache_lock.unlock();
+      return cell_cache.at(point);
     }
     cache_lock.unlock();
 #ifdef _DEBUG_VERBOSE
@@ -258,35 +260,27 @@ private:
 #endif
     std::unique_lock<std::mutex> jobs_lock(current_cell_jobs_mutex);
     if (current_cell_jobs.find(point) != current_cell_jobs.end()) {
+      jobs_lock.unlock();
       // cell not in cache but job running
-      try {
-        std::unique_lock<std::mutex> job_wait_lock(
-            *current_cell_jobs.at(point).m);
-        jobs_lock.unlock();
+      std::unique_lock<std::mutex> job_wait_lock(
+          *current_cell_jobs.at(point).m);
 #ifdef _DEBUG_VERBOSE
-        lk.lock();
-        std::cout << idx << " is at " << point << " job ongoing, waiting"
-                  << std::endl;
-        lk.unlock();
+      lk.lock();
+      std::cout << idx << " is at " << point << " job ongoing, waiting"
+                << std::endl;
+      lk.unlock();
 #endif
+      while (!current_cell_jobs.at(point).done) {
         current_cell_jobs.at(point).cv->wait(job_wait_lock);
+      }
 #ifdef _DEBUG_VERBOSE
-        lk.lock();
-        std::cout << idx << " is at " << point << " waited job done"
-                  << std::endl;
-        lk.unlock();
+      lk.lock();
+      std::cout << idx << " is at " << point << " waited job done" << std::endl;
+      lk.unlock();
 #endif
-      } catch (const std::out_of_range &e) {
-        std::cerr << point << " failed at waiting for current job" << std::endl;
-        throw e;
-      }
-      try {
-        return cell_cache.at(point);
-      } catch (const std::out_of_range &e) {
-        std::cerr << point << " failed at returning after waited job finished"
-                  << std::endl;
-        throw e;
-      }
+      cache_lock.lock();
+      return cell_cache.at(point);
+      cache_lock.unlock();
     }
     // cell not in cache and no job
 #ifdef _DEBUG_VERBOSE
@@ -330,14 +324,10 @@ private:
     lk.unlock();
 #endif
     jobs_lock.lock();
-    try {
-      std::unique_lock<std::mutex> cur_job_lock(*current_cell_jobs.at(point).m);
-      current_cell_jobs.at(point).cv->notify_all();
-      // current_cell_jobs.erase(point);
-    } catch (const std::out_of_range &e) {
-      std::cerr << point << " NO POINT NOTIFY" << std::endl;
-      throw e;
-    }
+    std::unique_lock<std::mutex> cur_job_lock(*current_cell_jobs.at(point).m);
+    current_cell_jobs.at(point).done = true;
+    current_cell_jobs.at(point).cv->notify_all();
+    cur_job_lock.unlock();
     jobs_lock.unlock();
 
 #ifdef _DEBUG_VERBOSE
@@ -374,7 +364,7 @@ private:
       t_cur += inc.delta_t;
     }
 
-#if defined(_DEBUG_VERBOSE) || defined(_DEBUG)
+#ifdef _DEBUG
     lk.lock();
     std::cout << idx << " finished at " << cur << std::endl;
     lk.unlock();

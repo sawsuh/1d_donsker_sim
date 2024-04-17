@@ -1,5 +1,5 @@
-check_verb: compile_verb run_check
 check_debug: compile_debug run_check
+check_verb: compile_verb run_check
 check: compile_debug run_check
 time: compile run_check
 compile:
