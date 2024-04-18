@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <random>
+#include <semaphore>
 #include <set>
 #include <stdexcept>
 #include <type_traits>
@@ -18,7 +19,7 @@
 enum PlusMinus { plus, minus };
 
 // INPUT
-const int ROUNDS = 3000;
+const int ROUNDS = 1000;
 const int PRINT_INTERVAL = 100;
 const double INTEGRATION_INC = 0.0001;
 const double START = 0;
@@ -29,7 +30,7 @@ double b(double x) { return 0; }
 struct cell {
   double left, right;
 };
-cell get_adjacent(double point) { return cell{point - 0.2, point + 0.2}; }
+cell get_adjacent(double point) { return cell{point - 0.001, point + 0.001}; }
 
 struct cellData {
   double time_left;
