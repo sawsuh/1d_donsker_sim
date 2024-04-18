@@ -215,7 +215,8 @@ public:
       right.push_back(std::move(x));
     } else if ((idx < 0) && (-1 - idx == left.size())) {
       left.push_back(std::move(x));
-    } else {
+    } else if (!(((idx >= 0) && (idx < right.size())) ||
+                 ((idx < 0) && (-1 - idx < left.size())))) {
       throw std::out_of_range("past end");
     }
   }
@@ -264,15 +265,14 @@ public:
 
 private:
   double_vec<cellData> cell_cache;
-  // std::mutex cell_cache_mutex;
-  double_vec<cellJob> current_cell_jobs;
-  std::mutex current_cell_jobs_mutex;
+  std::mutex cell_cache_mutex;
+  // double_vec<cellJob> current_cell_jobs;
+  // std::mutex current_cell_jobs_mutex;
   std::mutex results_mutex;
   std::mutex cout_mutex;
   cellData get_data(double point, int grid_idx, int idx = 0) {
     std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
 
-    // std::unique_lock<std::mutex> cache_lock(cell_cache_mutex);
     if (cell_cache.contains(grid_idx)) { // cell in cache
                                          // cache_lock.unlock();
 #ifdef _DEBUG_VERBOSE
@@ -288,7 +288,7 @@ private:
     std::cout << idx << " is at " << point << " cell cache miss" << std::endl;
     lk.unlock();
 #endif
-    std::unique_lock<std::mutex> jobs_lock(current_cell_jobs_mutex);
+    /* std::unique_lock<std::mutex> jobs_lock(current_cell_jobs_mutex);
     if (current_cell_jobs.contains(grid_idx)) {
       jobs_lock.unlock();
       // cell not in cache but job running
@@ -309,7 +309,7 @@ private:
       lk.unlock();
 #endif
       return cell_cache.at(grid_idx);
-    }
+    } */
     // cell not in cache and no job
 #ifdef _DEBUG_VERBOSE
     lk.lock();
@@ -318,18 +318,19 @@ private:
     lk.unlock();
 #endif
 
-    // place job in joblist
+    /* // place job in joblist
     current_cell_jobs.insert(
         grid_idx, cellJob{std::unique_ptr<std::condition_variable>(
                               new std::condition_variable),
                           std::unique_ptr<std::mutex>(new std::mutex), false});
+  */
 #ifdef _DEBUG_VERBOSE
     lk.lock();
     std::cout << idx << " is at " << point << " placed job in joblist"
               << std::endl;
     lk.unlock();
 #endif
-    jobs_lock.unlock();
+    // jobs_lock.unlock();
     // job in joblist
 
     cell lr = get_adjacent(point);
@@ -341,9 +342,10 @@ private:
               << std::endl;
     lk.unlock();
 #endif
+    std::unique_lock<std::mutex> cache_lock(cell_cache_mutex);
     // cache_lock.lock();
     cell_cache.insert(grid_idx, out);
-    // cache_lock.unlock();
+    cache_lock.unlock();
 
 #ifdef _DEBUG_VERBOSE
     lk.lock();
@@ -351,7 +353,7 @@ private:
               << std::endl;
     lk.unlock();
 #endif
-    std::unique_lock<std::mutex> cur_job_lock(
+    /* std::unique_lock<std::mutex> cur_job_lock(
         *current_cell_jobs.at(grid_idx).m);
     current_cell_jobs.at(grid_idx).done = true;
     current_cell_jobs.at(grid_idx).cv->notify_all();
@@ -362,7 +364,7 @@ private:
     std::cout << idx << " is at " << point << " notified and erased"
               << std::endl;
     lk.unlock();
-#endif
+#endif */
     return out;
   }
   increment next_point(double point, std::mt19937 &rng, int grid_idx,
