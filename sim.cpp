@@ -22,7 +22,7 @@ double b(double x) { return 0; }
 struct cell {
   double left, right;
 };
-cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
+cell get_adjacent(double point) { return cell{point - 0.001, point + 0.001}; }
 
 struct cellData {
   double time_left;
