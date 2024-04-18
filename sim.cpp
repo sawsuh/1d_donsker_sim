@@ -17,7 +17,7 @@
 enum PlusMinus { plus, minus };
 
 // INPUT
-const int ROUNDS = 1000;
+const int ROUNDS = 4;
 const int PRINT_INTERVAL = 100;
 const double INTEGRATION_INC = 0.0001;
 const double START = 0;
@@ -28,7 +28,7 @@ double b(double x) { return 0; }
 struct cell {
   double left, right;
 };
-cell get_adjacent(double point) { return cell{point - 0.001, point + 0.001}; }
+cell get_adjacent(double point) { return cell{point - 0.2, point + 0.2}; }
 
 struct cellData {
   double time_left;
@@ -91,28 +91,7 @@ private:
     if (position < psi_values.size()) {
       return psi_values[position] * 2;
     }
-#ifndef _SAFE
     throw std::out_of_range("psi cache miss");
-#else
-    double integral = 0;
-    double y = left;
-    while (y < x) {
-      double y_next = y + integration_inc;
-      int position_y = get_index(y_next);
-      if (position_y < psi_values.size()) {
-        integral = psi_values[position_y];
-        y = y_next;
-        continue;
-      }
-      integral +=
-          integration_inc *
-          (b(y) / (a(y) * rho(y)) + b(y_next) / (a(y_next) * rho(y_next))) / 2;
-      push_safe(psi_values, position_y, integral);
-      y = y_next;
-    }
-    push_safe(psi_values, position, integral);
-    return integral * 2;
-#endif
   }
   void gen_v0plus_helper_table() {
     v0plus_helper_values.reserve(get_index(right));
@@ -132,27 +111,7 @@ private:
     if (position < v0plus_helper_values.size()) {
       return v0plus_helper_values[position];
     }
-#ifndef _SAFE
     throw std::out_of_range("v0plus helper cache miss");
-#else
-    double integral = 0;
-    double y = left;
-    while (y < x) {
-      double y_next = y + integration_inc;
-      int position_y = get_index(y_next);
-      if (position_y < v0plus_helper_values.size()) {
-        integral = v0plus_helper_values[position_y];
-        y = y_next;
-        continue;
-      }
-      integral += integration_inc *
-                  (exp(-psi(y)) / a(y) + exp(-psi(y_next)) / a(y_next)) / 2;
-      push_safe(v0plus_helper_values, position_y, integral);
-      y = y_next;
-    }
-    push_safe(v0plus_helper_values, position, integral);
-    return integral;
-#endif
   }
   double v0plus(double x) {
     return v0plus_helper_integral(x) / v0plus_helper_integral(right);
@@ -247,7 +206,6 @@ public:
     std::vector<std::thread> threads;
     for (int idx = 0; idx < rounds; idx++) {
       threads.push_back(std::thread(&Simulator::run_sim, this, t, idx));
-      // threads[idx].join();
 #ifdef _DEBUG
       std::cout << "spawned " << idx << std::endl;
 #endif
@@ -266,15 +224,12 @@ public:
 private:
   double_vec<cellData> cell_cache;
   std::mutex cell_cache_mutex;
-  // double_vec<cellJob> current_cell_jobs;
-  // std::mutex current_cell_jobs_mutex;
   std::mutex results_mutex;
   std::mutex cout_mutex;
   cellData get_data(double point, int grid_idx, int idx = 0) {
     std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
 
     if (cell_cache.contains(grid_idx)) { // cell in cache
-                                         // cache_lock.unlock();
 #ifdef _DEBUG_VERBOSE
       lk.lock();
       std::cout << idx << " is at " << point << " cell cache hit" << std::endl;
@@ -282,57 +237,12 @@ private:
 #endif
       return cell_cache.at(grid_idx);
     }
-    // cache_lock.unlock();
 #ifdef _DEBUG_VERBOSE
     lk.lock();
-    std::cout << idx << " is at " << point << " cell cache miss" << std::endl;
-    lk.unlock();
-#endif
-    /* std::unique_lock<std::mutex> jobs_lock(current_cell_jobs_mutex);
-    if (current_cell_jobs.contains(grid_idx)) {
-      jobs_lock.unlock();
-      // cell not in cache but job running
-      std::unique_lock<std::mutex> job_wait_lock(
-          *current_cell_jobs.at(grid_idx).m);
-#ifdef _DEBUG_VERBOSE
-      lk.lock();
-      std::cout << idx << " is at " << point << " job ongoing, waiting"
-                << std::endl;
-      lk.unlock();
-#endif
-      while (!current_cell_jobs.at(grid_idx).done) {
-        current_cell_jobs.at(grid_idx).cv->wait(job_wait_lock);
-      }
-#ifdef _DEBUG_VERBOSE
-      lk.lock();
-      std::cout << idx << " is at " << point << " waited job done" << std::endl;
-      lk.unlock();
-#endif
-      return cell_cache.at(grid_idx);
-    } */
-    // cell not in cache and no job
-#ifdef _DEBUG_VERBOSE
-    lk.lock();
-    std::cout << idx << " is at " << point << " no job ongoing, doing work"
+    std::cout << idx << " is at " << point << " cell cache miss, computing"
               << std::endl;
     lk.unlock();
 #endif
-
-    /* // place job in joblist
-    current_cell_jobs.insert(
-        grid_idx, cellJob{std::unique_ptr<std::condition_variable>(
-                              new std::condition_variable),
-                          std::unique_ptr<std::mutex>(new std::mutex), false});
-  */
-#ifdef _DEBUG_VERBOSE
-    lk.lock();
-    std::cout << idx << " is at " << point << " placed job in joblist"
-              << std::endl;
-    lk.unlock();
-#endif
-    // jobs_lock.unlock();
-    // job in joblist
-
     cell lr = get_adjacent(point);
     CellDataCalculator calc(lr.left, lr.right, point);
     cellData out = calc.compute_cell_data();
@@ -343,28 +253,14 @@ private:
     lk.unlock();
 #endif
     std::unique_lock<std::mutex> cache_lock(cell_cache_mutex);
-    // cache_lock.lock();
     cell_cache.insert(grid_idx, out);
     cache_lock.unlock();
-
 #ifdef _DEBUG_VERBOSE
     lk.lock();
-    std::cout << idx << " is at " << point << " written, notifying"
+    std::cout << idx << " is at " << point << ", writing and returning"
               << std::endl;
     lk.unlock();
 #endif
-    /* std::unique_lock<std::mutex> cur_job_lock(
-        *current_cell_jobs.at(grid_idx).m);
-    current_cell_jobs.at(grid_idx).done = true;
-    current_cell_jobs.at(grid_idx).cv->notify_all();
-    cur_job_lock.unlock();
-
-#ifdef _DEBUG_VERBOSE
-    lk.lock();
-    std::cout << idx << " is at " << point << " notified and erased"
-              << std::endl;
-    lk.unlock();
-#endif */
     return out;
   }
   increment next_point(double point, std::mt19937 &rng, int grid_idx,
