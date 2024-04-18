@@ -4,6 +4,7 @@ venv/*
 *.csv
 out
 sim
+.RData
 .Rhistory
 Rplots.pdf
 log.txt
