@@ -266,7 +266,7 @@ public:
 
 private:
   double_vec<cellData> cell_cache;
-  std::mutex cell_cache_mutex;
+  // std::mutex cell_cache_mutex;
   double_vec<cellJob> current_cell_jobs;
   std::mutex current_cell_jobs_mutex;
   std::mutex results_mutex;
@@ -274,8 +274,9 @@ private:
   cellData get_data(double point, int grid_idx, int idx = 0) {
     std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
 
-    std::unique_lock<std::mutex> cache_lock(cell_cache_mutex, std::defer_lock);
+    // std::unique_lock<std::mutex> cache_lock(cell_cache_mutex);
     if (cell_cache.contains(grid_idx)) { // cell in cache
+                                         // cache_lock.unlock();
 #ifdef _DEBUG_VERBOSE
       lk.lock();
       std::cout << idx << " is at " << point << " cell cache hit" << std::endl;
@@ -283,6 +284,7 @@ private:
 #endif
       return cell_cache.at(grid_idx);
     }
+    // cache_lock.unlock();
 #ifdef _DEBUG_VERBOSE
     lk.lock();
     std::cout << idx << " is at " << point << " cell cache miss" << std::endl;
@@ -341,9 +343,9 @@ private:
               << std::endl;
     lk.unlock();
 #endif
-    cache_lock.lock();
+    // cache_lock.lock();
     cell_cache.insert(grid_idx, out);
-    cache_lock.unlock();
+    // cache_lock.unlock();
 
 #ifdef _DEBUG_VERBOSE
     lk.lock();
