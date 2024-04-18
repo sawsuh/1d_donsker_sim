@@ -10,6 +10,7 @@
 #include <random>
 #include <set>
 #include <stdexcept>
+#include <thread>
 #include <unistd.h>
 #include <unordered_map>
 
@@ -350,13 +351,11 @@ private:
               << std::endl;
     lk.unlock();
 #endif
-    jobs_lock.lock();
     std::unique_lock<std::mutex> cur_job_lock(
         *current_cell_jobs.at(grid_idx).m);
     current_cell_jobs.at(grid_idx).done = true;
     current_cell_jobs.at(grid_idx).cv->notify_all();
     cur_job_lock.unlock();
-    jobs_lock.unlock();
 
 #ifdef _DEBUG_VERBOSE
     lk.lock();
