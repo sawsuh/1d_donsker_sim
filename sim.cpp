@@ -2,17 +2,14 @@
 #include <cmath>
 #include <condition_variable>
 #include <fstream>
-#include <future>
 #include <iostream>
 #include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <random>
-#include <semaphore>
 #include <set>
 #include <stdexcept>
-#include <type_traits>
 #include <unistd.h>
 #include <unordered_map>
 
