@@ -1,3 +1,3 @@
 vals <- read.csv('res.csv', header=F)
 x <- vals$V1
-hist(x)
+hist(x, breaks=50)

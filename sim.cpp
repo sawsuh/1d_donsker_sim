@@ -17,18 +17,24 @@
 enum PlusMinus { plus, minus };
 
 // INPUT
-const int ROUNDS = 1000;
+const int ROUNDS = 10000;
 const int PRINT_INTERVAL = 100;
-const double INTEGRATION_INC = 0.0001;
+const double INTEGRATION_INC = 0.00001;
 const double START = 0;
 const double TIME = 1;
 double a(double x) { return 1; }
-double rho(double x) { return 1; }
+double rho(double x) {
+  if (x < 0) {
+    return 1;
+  } else {
+    return 5;
+  }
+}
 double b(double x) { return 0; }
 struct cell {
   double left, right;
 };
-cell get_adjacent(double point) { return cell{point - 0.001, point + 0.001}; }
+cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
 
 struct cellData {
   double time_left;
