@@ -4,12 +4,10 @@
 #include <iostream>
 #include <iterator>
 #include <map>
-#include <mutex>
+#include <omp.h>
 #include <random>
 #include <set>
-#include <shared_mutex>
 #include <stdexcept>
-#include <thread>
 #include <unistd.h>
 #include <unordered_map>
 
@@ -184,16 +182,14 @@ private:
   // We use the trapezoid rule
   double v1plus(double x) {
     double integral = 0;
-    double y = left;
-    double y_next;
-    while (y < right) {
-      y_next = y + integration_inc;
+    for (int y_idx = 0; y_idx < get_index(right); y_idx++) {
+      double y = y_idx * integration_inc + left;
+      double y_next = y + integration_inc;
       integral +=
           integration_inc *
           (G(x, y) * v0plus(y) * exp(psi(y)) / rho(y) +
            G(x, y_next) * v0plus(y_next) * exp(psi(y_next)) / rho(y_next)) /
           2;
-      y = y_next;
     }
     return integral;
   }
@@ -202,16 +198,14 @@ private:
   // We use the trapezoid rule
   double v1minus(double x) {
     double integral = 0;
-    double y = left;
-    double y_next;
-    while (y < right) {
-      y_next = y + integration_inc;
+    for (int y_idx = 0; y_idx < get_index(right); y_idx++) {
+      double y = y_idx * integration_inc + left;
+      double y_next = y + integration_inc;
       integral +=
           integration_inc *
           (G(x, y) * v0minus(y) * exp(psi(y)) / rho(y) +
            G(x, y_next) * v0minus(y_next) * exp(psi(y_next)) / rho(y_next)) /
           2;
-      y = y_next;
     }
     return integral;
   }
@@ -230,32 +224,26 @@ struct increment {
 // grid since we walk through the grid from our start outwards, we can use a
 // vector which builds up on each side i.e. indexed by integers instead of
 // naturals.
-//
-// We want this to be thread safe
 template <typename DT> class double_vec {
 public:
-  // only does anything if we are trying to add to the end
-  // if we are trying to modify existing data, does nothing
-  // if we are trying to insert past the end, throws an error
+  // safe insert
   void insert(int idx, DT x) {
-    // writers need exclusive access
-    std::unique_lock<std::shared_mutex> lk(access_mutex);
-    if (((idx >= 0) && (idx < right.size())) ||
-        ((idx < 0) && (-1 - idx < left.size()))) {
+    // if we are trying to modify existing data, does nothing
+    if (contains(idx)) {
       return;
     }
+    // only if we are adding correctly to the end does it add data
     if ((idx >= 0) && (idx == right.size())) {
       right.push_back(std::move(x));
     } else if ((idx < 0) && (-1 - idx == left.size())) {
       left.push_back(std::move(x));
     } else {
+      // if we are trying to insert past the end, throws an error
       throw std::out_of_range("past end");
     }
   }
   // indexes safely
   DT &at(int idx) {
-    // readers can use shared access
-    std::shared_lock<std::shared_mutex> lk(access_mutex);
     if (idx >= 0) {
       return right.at(idx);
     } else {
@@ -265,8 +253,6 @@ public:
   // checks if index exists
   // only requires a size comparison
   bool contains(int idx) {
-    // readers can use shared access
-    std::shared_lock<std::shared_mutex> lk(access_mutex);
     return (((idx >= 0) && (idx < right.size())) ||
             ((idx < 0) && (-1 - idx < left.size())));
   }
@@ -275,9 +261,6 @@ private:
   // underlying is two vectors glued together at the starts
   std::vector<DT> left;
   std::vector<DT> right;
-  // shared mutex handles synchronisation
-  // there are many reads and infrequent writes
-  std::shared_mutex access_mutex;
 };
 
 // Handles simulating the random walks
@@ -290,21 +273,8 @@ public:
   std::vector<double> results;
   // Runs simulation
   void simulate(double t, int rounds = ROUNDS) {
-    // Holds threads
-    std::vector<std::thread> threads;
-    // Initialise ROUNDS # threads
     for (int idx = 0; idx < rounds; idx++) {
-      threads.push_back(std::thread(&Simulator::run_sim, this, t, idx));
-#ifdef _DEBUG
-      std::cout << "spawned " << idx << std::endl;
-#endif
-    }
-    // Join all threads
-    for (int idx = 0; idx < rounds; idx++) {
-      threads[idx].join();
-#ifdef _DEBUG
-      std::cout << "joined " << idx << std::endl;
-#endif
+      run_sim(t, idx);
     }
     // Write results to "res.csv"
     std::ofstream output_file("res.csv");
@@ -316,16 +286,8 @@ private:
   // Holds computed data for cells we have visited
   // Uses double vector because we visit cells from start point outwards
   // And can just count the jumps
-  // is thread-safe
   double_vec<cellData> cell_cache;
-  // Synchronises result writes
-  std::mutex results_mutex;
-  // Synchronises STDOUT access
-  std::mutex cout_mutex;
-  // Compute data for a point in the grid
   cellData get_data(double point, int grid_idx, int idx = 0) {
-    std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
-
     // If the point is in our cache
     // (we already visited it and have data)
     if (cell_cache.contains(grid_idx)) {
@@ -362,16 +324,13 @@ private:
       return increment{lr.left, point_data.time_left, -1};
     }
   }
-  // run 1 simulation (single thread)
+  // run 1 simulation
   // takes start point
-  // idx represents thread number (for logging)
+  // idx represents iteration number (for logging)
   void run_sim(double t, int idx) {
     double cur = start;
     double t_cur = 0;
-    // lock for writing to STDOUT
-    std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
     // random device for random number generation
-    // expensive so only initialise once per thread
     std::random_device rd;
     std::mt19937 rng{rd()};
 
@@ -386,14 +345,10 @@ private:
       grid_idx += inc.change_grid_idx;
       t_cur += inc.delta_t;
     }
-
 #ifdef _DEBUG
-    lk.lock();
     std::cout << idx << " finished at " << cur << std::endl;
-    lk.unlock();
 #endif
-    // write result (using lock since vector writes aren't threadsafe)
-    std::unique_lock<std::mutex> res_lock(results_mutex);
+    // write result
     results.push_back(cur);
   }
 };
