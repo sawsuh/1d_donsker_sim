@@ -7,6 +7,7 @@
 #include <mutex>
 #include <random>
 #include <set>
+#include <shared_mutex>
 #include <stdexcept>
 #include <thread>
 #include <unistd.h>
@@ -45,7 +46,7 @@ struct cell {
 // GRID SPECIFICATION
 // args: point in grid
 // returns: two adjacent points
-cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
+cell get_adjacent(double point) { return cell{point - 0.05, point + 0.05}; }
 
 // data for a cell:
 // contains left and right exit probabilities and
@@ -228,23 +229,32 @@ struct increment {
 // grid since we walk through the grid from our start outwards, we can use a
 // vector which builds up on each side i.e. indexed by integers instead of
 // naturals.
+//
+// We want this to be thread safe
 template <typename DT> class double_vec {
 public:
   // only does anything if we are trying to add to the end
   // if we are trying to modify existing data, does nothing
   // if we are trying to insert past the end, throws an error
   void insert(int idx, DT x) {
+    // writers need exclusive access
+    std::unique_lock<std::shared_mutex> lk(access_mutex);
+    if (((idx >= 0) && (idx < right.size())) ||
+        ((idx < 0) && (-1 - idx < left.size()))) {
+      return;
+    }
     if ((idx >= 0) && (idx == right.size())) {
       right.push_back(std::move(x));
     } else if ((idx < 0) && (-1 - idx == left.size())) {
       left.push_back(std::move(x));
-    } else if (!(((idx >= 0) && (idx < right.size())) ||
-                 ((idx < 0) && (-1 - idx < left.size())))) {
+    } else {
       throw std::out_of_range("past end");
     }
   }
   // indexes safely
   DT &at(int idx) {
+    // readers can use shared access
+    std::shared_lock<std::shared_mutex> lk(access_mutex);
     if (idx >= 0) {
       return right.at(idx);
     } else {
@@ -254,6 +264,8 @@ public:
   // checks if index exists
   // only requires a size comparison
   bool contains(int idx) {
+    // readers can use shared access
+    std::shared_lock<std::shared_mutex> lk(access_mutex);
     return (((idx >= 0) && (idx < right.size())) ||
             ((idx < 0) && (-1 - idx < left.size())));
   }
@@ -262,6 +274,9 @@ private:
   // underlying is two vectors glued together at the starts
   std::vector<DT> left;
   std::vector<DT> right;
+  // shared mutex handles synchronisation
+  // there are many reads and infrequent writes
+  std::shared_mutex access_mutex;
 };
 
 // Handles simulating the random walks
@@ -300,9 +315,8 @@ private:
   // Holds computed data for cells we have visited
   // Uses double vector because we visit cells from start point outwards
   // And can just count the jumps
+  // is thread-safe
   double_vec<cellData> cell_cache;
-  // Synchronises cache writes
-  std::mutex cell_cache_mutex;
   // Synchronises result writes
   std::mutex results_mutex;
   // Synchronises STDOUT access
@@ -313,8 +327,6 @@ private:
 
     // If the point is in our cache
     // (we already visited it and have data)
-    // we can read this without locking because
-    // the data (for this cell) will never change
     if (cell_cache.contains(grid_idx)) {
       return cell_cache.at(grid_idx);
     }
@@ -327,11 +339,7 @@ private:
     CellDataCalculator calc(lr.left, lr.right, point);
     cellData out = calc.compute_cell_data();
     // write computed data to cache
-    // using lock to synchronise writes
-    // (since vector writes are not threadsafe)
-    std::unique_lock<std::mutex> cache_lock(cell_cache_mutex);
     cell_cache.insert(grid_idx, out);
-    cache_lock.unlock();
 
     // return computed value
     return out;
