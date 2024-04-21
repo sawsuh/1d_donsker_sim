@@ -226,7 +226,8 @@ struct increment {
 };
 // this is a structure for storing data we compute correponding to points in the
 // grid since we walk through the grid from our start outwards, we can use a
-// vector which builds up on each side
+// vector which builds up on each side i.e. indexed by integers instead of
+// naturals.
 template <typename DT> class double_vec {
 public:
   // only does anything if we are trying to add to the end
@@ -312,6 +313,8 @@ private:
 
     // If the point is in our cache
     // (we already visited it and have data)
+    // we can read this without locking because
+    // the data (for this cell) will never change
     if (cell_cache.contains(grid_idx)) {
       return cell_cache.at(grid_idx);
     }
@@ -359,6 +362,7 @@ private:
     // lock for writing to STDOUT
     std::unique_lock<std::mutex> lk(cout_mutex, std::defer_lock);
     // random device for random number generation
+    // expensive so only initialise once per thread
     std::random_device rd;
     std::mt19937 rng{rd()};
 
