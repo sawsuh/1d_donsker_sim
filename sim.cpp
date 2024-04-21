@@ -46,7 +46,8 @@ struct cell {
 // GRID SPECIFICATION
 // args: point in grid
 // returns: two adjacent points
-cell get_adjacent(double point) { return cell{point - 0.05, point + 0.05}; }
+cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
+// =============================
 
 // data for a cell:
 // contains left and right exit probabilities and
