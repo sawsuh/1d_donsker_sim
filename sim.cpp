@@ -229,14 +229,13 @@ public:
   // safe insert
   void insert(int idx, DT x) {
     // if we are trying to modify existing data, does nothing
-    if (contains(idx)) {
-      return;
-    }
     // only if we are adding correctly to the end does it add data
     if ((idx >= 0) && (idx == right.size())) {
       right.push_back(std::move(x));
     } else if ((idx < 0) && (-1 - idx == left.size())) {
       left.push_back(std::move(x));
+    } else if (contains(idx)) {
+      return;
     } else {
       // if we are trying to insert past the end, throws an error
       throw std::out_of_range("past end");
