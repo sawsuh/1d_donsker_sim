@@ -1,13 +1,18 @@
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <list>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <omp.h>
 #include <random>
 #include <set>
 #include <stdexcept>
+#include <thread>
 #include <unistd.h>
 #include <unordered_map>
 
@@ -29,9 +34,8 @@ double a(double x) { return 1; }
 double rho(double x) {
   if (x < 0) {
     return 1;
-  } else {
-    return 5;
   }
+  return 5;
 }
 // b
 double b(double x) { return 0; }
@@ -221,45 +225,94 @@ struct increment {
   int change_grid_idx;
 };
 // this is a structure for storing data we compute correponding to points in the
-// grid since we walk through the grid from our start outwards, we can use a
-// vector which builds up on each side i.e. indexed by integers instead of
-// naturals.
-template <typename DT> class double_vec {
+// grid
+class cell_cache {
 public:
-  // safe insert
-  void insert(int idx, DT x) {
-    // if we are trying to modify existing data, does nothing
-    // only if we are adding correctly to the end does it add data
-    if ((idx >= 0) && (idx == right.size())) {
-      right.push_back(std::move(x));
-    } else if ((idx < 0) && (-1 - idx == left.size())) {
-      left.push_back(std::move(x));
-    } else if (contains(idx)) {
-      return;
-    } else {
-      // if we are trying to insert past the end, throws an error
-      throw std::out_of_range("past end");
-    }
+  std::atomic<int> left;
+  std::atomic<int> right;
+  std::mutex left_m;
+  std::mutex right_m;
+  std::list<cellData> container;
+  cell_cache(double start) {
+    left = 0;
+    right = 0;
+    // get neighbours
+    cell lr = get_adjacent(start);
+    // Compute values
+    CellDataCalculator calc(lr.left, lr.right, start);
+    container.push_back(calc.compute_cell_data());
+    it = container.begin();
   }
-  // indexes safely
-  DT &at(int idx) {
-    if (idx >= 0) {
-      return right.at(idx);
-    } else {
-      return left.at(-1 - idx);
-    }
+  std::list<cellData>::iterator get_iter() { return it; }
+  // void insert(int idx, cellData x) {}
+  // cellData at(int idx) {}
+  // bool contains(int idx) {}
+private:
+  std::list<cellData>::iterator it;
+};
+class cell_cache_walker {
+public:
+  cell_cache_walker(std::shared_ptr<cell_cache> &c) : cache(c) {
+    it = c->get_iter();
+    idx = 0;
+    started = true;
   }
-  // checks if index exists
-  // only requires a size comparison
-  bool contains(int idx) {
-    return (((idx >= 0) && (idx < right.size())) ||
-            ((idx < 0) && (-1 - idx < left.size())));
+  bool contains(int goal) {
+    if (started && (abs(goal - idx) <= 1)) {
+      started = false;
+      return ((goal >= (*cache).left) && (goal <= (*cache).right));
+    } else if ((!started) && (abs(goal - idx) == 1)) {
+      return ((goal >= (*cache).left) && (goal <= (*cache).right));
+    }
+    throw std::out_of_range("checking too far away");
+  }
+  cellData at(int goal) {
+    if (((goal < (*cache).left) || (goal > (*cache).right)) ||
+        (abs(goal - idx) > 1)) {
+      throw std::out_of_range("checking more than a step away or out of range");
+    }
+    int change = goal - idx;
+    idx += change;
+    if (change == 1) {
+      return *(++it);
+    } else if (change == -1) {
+      return *(--it);
+    } else if (change == 0) {
+      return *it;
+    }
+    throw std::out_of_range("checking wrong place");
+  }
+  bool insert(int goal, cellData x) {
+    bool wrote = false;
+    if (goal == idx - 1) {
+      std::unique_lock<std::mutex> lk((*cache).left_m, std::defer_lock);
+      if (lk.try_lock() && (goal == (*cache).left - 1)) {
+        (*cache).container.push_front(x);
+        (*cache).left -= 1;
+        wrote = true;
+      }
+      idx = idx - 1;
+      --it;
+    } else if (goal == idx + 1) {
+      std::unique_lock<std::mutex> lk((*cache).right_m, std::defer_lock);
+      if (lk.try_lock() && (goal == (*cache).right + 1)) {
+        (*cache).container.push_back(x);
+        (*cache).right += 1;
+        wrote = true;
+      }
+      idx = idx + 1;
+      ++it;
+    } else {
+      throw std::out_of_range("inserting more than 1 away");
+    }
+    return wrote;
   }
 
 private:
-  // underlying is two vectors glued together at the starts
-  std::vector<DT> left;
-  std::vector<DT> right;
+  std::shared_ptr<cell_cache> &cache;
+  std::list<cellData>::iterator it;
+  int idx;
+  bool started;
 };
 
 // Handles simulating the random walks
@@ -267,13 +320,19 @@ class Simulator {
 public:
   // Start point
   double start;
-  Simulator(double x) { start = x; }
+  Simulator(double x) : cache_ptr(std::make_shared<cell_cache>(x)) {
+    start = x;
+  }
   // Holds results
   std::vector<double> results;
   // Runs simulation
   void simulate(double t, int rounds = ROUNDS) {
+    std::vector<std::thread> threads;
     for (int idx = 0; idx < rounds; idx++) {
-      run_sim(t, idx);
+      threads.push_back(std::thread(&Simulator::run_sim, this, t, idx));
+    }
+    for (int idx = 0; idx < rounds; idx++) {
+      threads[idx].join();
     }
     // Write results to "res.csv"
     std::ofstream output_file("res.csv");
@@ -282,16 +341,34 @@ public:
   }
 
 private:
+  std::mutex cout_m;
   // Holds computed data for cells we have visited
   // Uses double vector because we visit cells from start point outwards
   // And can just count the jumps
-  double_vec<cellData> cell_cache;
-  cellData get_data(double point, int grid_idx, int idx = 0) {
-    // If the point is in our cache
-    // (we already visited it and have data)
-    if (cell_cache.contains(grid_idx)) {
-      return cell_cache.at(grid_idx);
+  std::shared_ptr<cell_cache> cache_ptr;
+  cellData get_data(cell_cache_walker &walker, double point, int grid_idx,
+                    int idx) {
+    std::unique_lock<std::mutex> lk(cout_m, std::defer_lock);
+// If the point is in our cache
+// (we already visited it and have data)
+#ifdef _DEBUG
+    lk.lock();
+    std::cout << idx << " checking for " << grid_idx << std::endl;
+    lk.unlock();
+#endif
+    if (walker.contains(grid_idx)) {
+#ifdef _DEBUG
+      lk.lock();
+      std::cout << idx << " found " << grid_idx << std::endl;
+      lk.unlock();
+#endif
+      return walker.at(grid_idx);
     }
+#ifdef _DEBUG
+    lk.lock();
+    std::cout << idx << " couldnt find " << grid_idx << std::endl;
+    lk.unlock();
+#endif
     // If the point is not in our cache
     // Compute the necessary data
 
@@ -300,19 +377,36 @@ private:
     // Compute values
     CellDataCalculator calc(lr.left, lr.right, point);
     cellData out = calc.compute_cell_data();
-    // write computed data to cache
-    cell_cache.insert(grid_idx, out);
+// write computed data to cache
+#ifdef _DEBUG
+
+    lk.lock();
+    std::cout << idx << " trying to write " << grid_idx << std::endl;
+    lk.unlock();
+#endif
+    bool written = walker.insert(grid_idx, out);
+#ifdef _DEBUG
+    if (written) {
+      lk.lock();
+      std::cout << idx << " wrote " << grid_idx << std::endl;
+      lk.unlock();
+    } else {
+      lk.lock();
+      std::cout << idx << " couldnt write " << grid_idx << std::endl;
+      lk.unlock();
+    }
+#endif
 
     // return computed value
     return out;
   }
   // take a step from a point
-  increment next_point(double point, std::mt19937 &rng, int grid_idx,
-                       int idx = 0) {
+  increment next_point(cell_cache_walker &walker, double point,
+                       std::mt19937 &rng, int grid_idx, int idx = 0) {
     // get neighbours
     cell lr = get_adjacent(point);
     // get data
-    cellData point_data = get_data(point, grid_idx, idx);
+    cellData point_data = get_data(walker, point, grid_idx, idx);
     // simulate step
     std::bernoulli_distribution d(point_data.prob_right);
     if (d(rng)) {
@@ -332,20 +426,21 @@ private:
     // random device for random number generation
     std::random_device rd;
     std::mt19937 rng{rd()};
+    cell_cache_walker walker(cache_ptr);
 
     int grid_idx = 0;
 
     // run algorithm
     while (t_cur < t) {
       // get next point
-      increment inc = next_point(cur, rng, grid_idx, idx);
+      increment inc = next_point(walker, cur, rng, grid_idx, idx);
       // update position in grid and increment time
       cur = inc.next_point;
       grid_idx += inc.change_grid_idx;
       t_cur += inc.delta_t;
     }
 #ifdef _DEBUG
-    std::cout << idx << " finished at " << cur << std::endl;
+    std::cout << idx << " finished at " << cur << "\n";
 #endif
     // write result
     results.push_back(cur);
