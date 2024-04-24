@@ -23,7 +23,7 @@
 enum PlusMinus { plus, minus };
 // cell: contains values of left and right neighbours
 struct cell {
-  double left, right;
+  long double left, right;
 };
 
 // INPUT
@@ -32,38 +32,35 @@ struct cell {
 const int ROUNDS = 10000;
 // Number of concurrent threads
 // (only used if hardware detection fails)
-const int THREADS_FALLBACK = 16;
+const int THREADS_FALLBACK = 8;
 // Interval to use for numerical integration
-const double INTEGRATION_INC = 0.00001;
+const long double INTEGRATION_INC = 0.00001;
 // Starting point in grid
-const double START = 0;
+const long double START = 0;
 // Time at which we want to sample X_t
-const double TIME = 1;
+const long double TIME = 1;
 // a
-double a(double x) { return 1; }
+long double a(long double x) { return 1; }
 // rho
-double rho(double x) {
-  if (x < 0) {
-    return 1;
-  }
-  return 5;
-}
+long double rho(long double x) { return 1; }
 // b
-double b(double x) { return 0; }
+long double b(long double x) { return 0; }
 // GRID SPECIFICATION
 // args: point in grid
 // returns: two adjacent points
-cell get_adjacent(double point) { return cell{point - 0.01, point + 0.01}; }
+cell get_adjacent(long double point) {
+  return cell{point - 0.01, point + 0.01};
+}
 // =============================
 
 // data for a cell:
 // contains left and right exit probabilities and
 //  left and right exit times conditional on left and right exit probabilities
 struct cellData {
-  double time_left;
-  double time_right;
-  double prob_left;
-  double prob_right;
+  long double time_left;
+  long double time_right;
+  long double prob_left;
+  long double prob_right;
 };
 
 // vector that we use to cache data for our integral
@@ -78,12 +75,12 @@ template <typename DT> void push_safe(std::vector<DT> &vec, int idx, DT x) {
 class CellDataCalculator {
 public:
   // left boundary
-  double left;
+  long double left;
   // right boundary
-  double right;
+  long double right;
   // the point in the cell which our process starts at
-  double x;
-  CellDataCalculator(double l, double r, double y) {
+  long double x;
+  CellDataCalculator(long double l, long double r, long double y) {
     left = l;
     right = r;
     x = y;
@@ -96,35 +93,35 @@ public:
     // precompute table of s values
     gen_s_table();
     // we can now compute exit probabilities
-    double prob_left = v0minus(x);
-    double prob_right = v0plus(x);
+    long double prob_left = v0minus(x);
+    long double prob_right = v0plus(x);
     // we can now compute exit times
-    double time_left_ind = v1minus(x);
-    double time_right_ind = v1plus(x);
+    long double time_left_ind = v1minus(x);
+    long double time_right_ind = v1plus(x);
     return cellData{time_left_ind / prob_left, time_right_ind / prob_right,
                     prob_left, prob_right};
   }
 
 private:
   // table of values of psi
-  std::vector<double> psi_values;
+  std::vector<long double> psi_values;
   // table of values of s
-  std::vector<double> v0plus_helper_values;
+  std::vector<long double> v0plus_helper_values;
   // increment used for numerical integration
-  double integration_inc;
+  long double integration_inc;
   // arg: point
   // returns: index in table corresponding to the point (starts at 0)
   // (for table access)
-  int get_index(double x) { return round((x - left) / integration_inc); }
+  int get_index(long double x) { return round((x - left) / integration_inc); }
   // progressively precompute values of psi in one pass
   void gen_psi_table() {
     // reserve vector (we know the necessary length)
     psi_values.reserve(get_index(right) + 1);
     // integral from left to left is 0
     psi_values.push_back(0);
-    double integral = 0;
-    double y = left;
-    double y_next;
+    long double integral = 0;
+    long double y = left;
+    long double y_next;
     // integrate step by step and store each step as the integral up to that
     // point
     while (y < right) {
@@ -138,7 +135,7 @@ private:
     }
   }
   // all the necessary values should be stored in cache, throw an error if not
-  double psi(double x) {
+  long double psi(long double x) {
     int position = get_index(x);
     if (position < psi_values.size()) {
       return psi_values[position];
@@ -152,9 +149,9 @@ private:
     v0plus_helper_values.reserve(get_index(right) + 1);
     // integral left to left is 0
     v0plus_helper_values.push_back(0);
-    double integral = 0;
-    double y = left;
-    double y_next;
+    long double integral = 0;
+    long double y = left;
+    long double y_next;
     // for each step
     while (y < right) {
       y_next = y + integration_inc;
@@ -167,7 +164,7 @@ private:
     }
   }
   // all values should be precomputed, if not throw an error
-  double s(double x) {
+  long double s(long double x) {
     int position = get_index(x);
     if (position < v0plus_helper_values.size()) {
       return v0plus_helper_values[position];
@@ -175,11 +172,11 @@ private:
     throw std::out_of_range("v0plus helper cache miss");
   }
   // Now that we have s, we can compute v0plus
-  double v0plus(double x) { return s(x) / s(right); }
+  long double v0plus(long double x) { return s(x) / s(right); }
   // v0minus = 1-v0plus
-  double v0minus(double x) { return 1 - v0plus(x); }
+  long double v0minus(long double x) { return 1 - v0plus(x); }
   // We can also express G using s
-  double G(double x, double y) {
+  long double G(long double x, long double y) {
     if (x <= y) {
       return 2 * (s(x) - s(left)) * (s(right) - s(y)) / (s(right) - s(left));
     } else {
@@ -189,11 +186,11 @@ private:
   // We can use G together with psi and v0plus to compute v1plus
   // We only do this once so we only need one pass
   // We use the trapezoid rule
-  double v1plus(double x) {
-    double integral = 0;
+  long double v1plus(long double x) {
+    long double integral = 0;
     for (int y_idx = 0; y_idx < get_index(right); y_idx++) {
-      double y = y_idx * integration_inc + left;
-      double y_next = y + integration_inc;
+      long double y = y_idx * integration_inc + left;
+      long double y_next = y + integration_inc;
       integral +=
           integration_inc *
           (G(x, y) * v0plus(y) * exp(psi(y)) / rho(y) +
@@ -205,11 +202,11 @@ private:
   // We can use G together with psi and v0minus to compute v1minus
   // We only do this once so we only need one pass
   // We use the trapezoid rule
-  double v1minus(double x) {
-    double integral = 0;
+  long double v1minus(long double x) {
+    long double integral = 0;
     for (int y_idx = 0; y_idx < get_index(right); y_idx++) {
-      double y = y_idx * integration_inc + left;
-      double y_next = y + integration_inc;
+      long double y = y_idx * integration_inc + left;
+      long double y_next = y + integration_inc;
       integral +=
           integration_inc *
           (G(x, y) * v0minus(y) * exp(psi(y)) / rho(y) +
@@ -226,7 +223,7 @@ private:
 //  how long it takes us to get there
 //  we also track where our index in the grid changes
 struct increment {
-  double next_point, delta_t;
+  long double next_point, delta_t;
   int change_grid_idx;
 };
 // this is a structure for storing data we compute correponding to points in the
@@ -242,7 +239,7 @@ public:
   // actually holds the data
   std::list<cellData> container;
   // initialise with data for the start point
-  cell_cache(double start) {
+  cell_cache(long double start) {
     // frontier is start point
     left = 0;
     right = 0;
@@ -342,33 +339,34 @@ private:
 class Simulator {
 public:
   // Start point
-  double start;
+  long double start;
   // initialise cache
-  Simulator(double x) : cache_ptr(std::make_shared<cell_cache>(x)) {
+  Simulator(long double x) : cache_ptr(std::make_shared<cell_cache>(x)) {
     start = x;
   }
   // Holds results
-  std::vector<double> results;
+  std::vector<long double> results;
   // Runs simulation
-  void simulate(double t, int rounds = ROUNDS,
+  void simulate(long double t, int rounds = ROUNDS,
                 int thread_count_max_fallback = THREADS_FALLBACK) {
     int thread_count_max = std::thread::hardware_concurrency() == 0
                                ? thread_count_max_fallback
                                : std::thread::hardware_concurrency();
     std::vector<std::thread> threads;
-    // spawn thread_count_max num threads
-    for (int idx = 0; idx <= thread_count_max; idx++) {
-      // each does rounds/thread_count_max work
+    // spawn thread_count_max threads
+    for (int idx = 0; idx < thread_count_max; idx++) {
+      // each does 1+rounds/thread_count_max work
+      // adding 1 due to rounding down in integer division
       threads.push_back(std::thread(&Simulator::run_sim, this, t, idx,
-                                    rounds / thread_count_max));
+                                    1 + rounds / thread_count_max));
     }
     // join them
-    for (int idx = 0; idx <= thread_count_max; idx++) {
+    for (int idx = 0; idx < thread_count_max; idx++) {
       threads[idx].join();
     }
     // Write results to "res.csv"
     std::ofstream output_file("res.csv");
-    std::ostream_iterator<double> output_iterator(output_file, "\n");
+    std::ostream_iterator<long double> output_iterator(output_file, "\n");
     std::copy(std::begin(results), std::end(results), output_iterator);
 #ifdef _DEBUG
     std::cout << "wrote " << results.size() << " results\n";
@@ -383,7 +381,8 @@ private:
   // Holds computed data for cells we have visited
   std::shared_ptr<cell_cache> cache_ptr;
   // computes values
-  cellData get_data(cell_cache_walker &walker, double point, int grid_idx) {
+  cellData get_data(cell_cache_walker &walker, long double point,
+                    int grid_idx) {
     // If the point is in our cache
     // (we already visited it and have data)
     if (walker.contains(grid_idx)) {
@@ -404,7 +403,7 @@ private:
     return out;
   }
   // take a step from a point
-  increment next_point(cell_cache_walker &walker, double point,
+  increment next_point(cell_cache_walker &walker, long double point,
                        std::mt19937 &rng, int grid_idx) {
     // get neighbours
     cell lr = get_adjacent(point);
@@ -423,7 +422,7 @@ private:
   // run 1 thread
   // takes start point
   // idx represents iteration number (for logging)
-  void run_sim(double t, int idx, int thread_rounds) {
+  void run_sim(long double t, int idx, int thread_rounds) {
     std::unique_lock<std::mutex> lk(cout_m, std::defer_lock);
     for (int j = 0; j < thread_rounds; j++) {
 #ifdef _DEBUG
@@ -433,8 +432,8 @@ private:
 #endif
       cell_cache_walker walker(cache_ptr);
 
-      double cur = start;
-      double t_cur = 0;
+      long double cur = start;
+      long double t_cur = 0;
       // random device for random number generation
       std::random_device rd;
       std::mt19937 rng{rd()};
