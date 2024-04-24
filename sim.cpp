@@ -290,33 +290,36 @@ public:
   bool insert(int goal, cellData x) {
     bool wrote = false;
     int change = goal - idx;
+    // left frontier
+    if (change == -1) {
+      // insert if it isn't there
 #pragma omp critical
-    {
-      // left frontier
-      if (change == -1) {
-        // insert if it isn't there
+      {
         if (goal == cache->get_left() - 1) {
           cache->container.push_front(x);
           cache->inc_left();
           wrote = true;
         }
-        // walk this instance
-        idx = idx - 1;
-        it--;
-      } else if (change == 1) {
-        // right frontier
-        // insert if not there
+      }
+      // walk this instance
+      idx = idx - 1;
+      it--;
+    } else if (change == 1) {
+      // right frontier
+      // insert if not there
+#pragma omp critical
+      {
         if (goal == cache->get_right() + 1) {
           cache->container.push_back(x);
           cache->inc_right();
           wrote = true;
         }
-        // walk this instance
-        idx = idx + 1;
-        it++;
-      } else {
-        throw std::out_of_range("inserting not exactly 1 away");
       }
+      // walk this instance
+      idx = idx + 1;
+      it++;
+    } else {
+      throw std::out_of_range("inserting not exactly 1 away");
     }
     return wrote;
   }
