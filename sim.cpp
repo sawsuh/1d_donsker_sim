@@ -29,7 +29,7 @@ struct cell {
 // INPUT
 
 // Number of simulations
-const int ROUNDS = 10000;
+const int ROUNDS = 20000;
 // Number of concurrent threads
 // (only used if hardware detection fails)
 const int THREADS_FALLBACK = 8;
@@ -285,7 +285,7 @@ public:
     } else if (change == 0) {
       return *it;
     }
-    throw std::out_of_range("checking wrong place");
+    throw std::out_of_range("indexing too far away");
   }
   // safely insert an item
   // returns bool representing whether insertion
@@ -293,11 +293,15 @@ public:
   // after acquiring lock to prevent
   // double insertions
   bool insert(int goal, cellData x) {
+    if (abs(goal - idx) > 1) {
+      throw std::out_of_range("inserting too far away");
+    }
     bool wrote = false;
+    int change = goal - idx;
     // get lock for thread safety
     std::unique_lock<std::mutex> lk(cache->write_m);
     // left frontier
-    if (goal < 0) {
+    if (change == -1) {
       // insert if it isn't there
       if (goal == cache->left - 1) {
         cache->container.push_front(x);
@@ -308,7 +312,7 @@ public:
       // walk this instance
       idx = idx - 1;
       it--;
-    } else if (goal >= 0) {
+    } else if (change == 1) {
       // right frontier
       // insert if not there
       if (goal == cache->right + 1) {
@@ -321,7 +325,7 @@ public:
       idx = idx + 1;
       it++;
     } else {
-      throw std::out_of_range("inserting more than 1 away");
+      throw std::out_of_range("inserting not exactly 1 away");
     }
     return wrote;
   }
