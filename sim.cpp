@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <atomic>
 #include <cmath>
 #include <csignal>
 #include <execinfo.h>
@@ -9,13 +8,10 @@
 #include <list>
 #include <map>
 #include <memory>
-#include <mutex>
-#include <omp.h>
 #include <random>
 #include <set>
 #include <stdexcept>
 #include <stdlib.h>
-#include <thread>
 #include <unistd.h>
 #include <unordered_map>
 
@@ -30,9 +26,6 @@ struct cell {
 
 // Number of simulations
 const int ROUNDS = 10000;
-// Number of concurrent threads
-// (only used if hardware detection fails)
-const int THREADS_FALLBACK = 8;
 // Interval to use for numerical integration
 const long double INTEGRATION_INC = 0.00001;
 // Starting point in grid
@@ -42,7 +35,7 @@ const long double TIME = 1;
 // a
 long double a(long double x) { return 1; }
 // rho
-long double rho(long double x) { return 1; }
+long double rho(long double x) { return (x < 0) ? 1 : 5; }
 // b
 long double b(long double x) { return 0; }
 // GRID SPECIFICATION
@@ -75,12 +68,8 @@ template <typename DT> void push_safe(std::vector<DT> &vec, int idx, DT x) {
 // handles computation of integrals for a single cell
 class CellDataCalculator {
 public:
-  // left boundary
-  long double left;
-  // right boundary
-  long double right;
-  // the point in the cell which our process starts at
-  long double x;
+  // boundary and start point
+  long double left, right, x;
   CellDataCalculator(long double l, long double r, long double y) {
     left = l;
     right = r;
@@ -104,10 +93,8 @@ public:
   }
 
 private:
-  // table of values of psi
-  std::vector<long double> psi_values;
-  // table of values of s
-  std::vector<long double> s_values;
+  // tables of values for psi and s
+  std::vector<long double> psi_values, s_values;
   // increment used for numerical integration
   long double integration_inc;
   // arg: point
@@ -173,7 +160,7 @@ private:
     }
   }
   // We can use G together with psi and v0plus to compute v1plus
-  // We only do this once so we only need one pass
+  // We only do this once so we don't need to cache
   // We use the trapezoid rule
   long double v1plus(long double x) {
     long double integral = 0;
@@ -189,7 +176,7 @@ private:
     return integral;
   }
   // We can use G together with psi and v0minus to compute v1minus
-  // We only do this once so we only need one pass
+  // We only do this once so we don't need to cache
   // We use the trapezoid rule
   long double v1minus(long double x) {
     long double integral = 0;
@@ -223,6 +210,8 @@ public:
   std::list<cellData> container;
   // initialise with data for the start point
   cell_cache(long double start) {
+    left = 0;
+    right = 0;
     // get neighbours
     cell lr = get_adjacent(start);
     // Compute values
@@ -234,10 +223,36 @@ public:
   }
   // return iterator to start
   std::list<cellData>::iterator get_iter() { return it; }
+  // get left endpoint
+  int get_left() {
+    int l;
+#pragma omp atomic read
+    l = left;
+    return l;
+  }
+  // get right endpoint
+  int get_right() {
+    int r;
+#pragma omp atomic read
+    r = right;
+    return r;
+  }
+  // advance left endpoint
+  void inc_left() {
+#pragma omp atomic update
+    left--;
+  }
+  // advance right endpoint
+  void inc_right() {
+#pragma omp atomic update
+    right++;
+  }
 
 private:
   // persistent iterator to start point
   std::list<cellData>::iterator it;
+  // endpoints
+  int left, right;
 };
 // object that each thread uses to walk the cache
 class cell_cache_walker {
@@ -249,19 +264,13 @@ public:
     idx = 0;
   }
   // check if cache holds an item
-  // left and right are atomic and only decrease/increase
-  // so this is safe
-  bool contains(int goal, int &left, int &right) {
-    int l;
-    int r;
-#pragma omp atomic read
-    l = left;
-#pragma omp atomic read
-    r = right;
-    return (l <= goal) && (r >= goal);
+  // left and right are the ends of the cache
+  bool contains(int goal) {
+    return (cache->get_left() <= goal) && (goal <= cache->get_right());
   }
   // return an item that is 0 or 1 steps away
   // (and walk there)
+  // assumes we already checked existence
   cellData at(int goal) {
     int change = goal - idx;
     // increment internal position
@@ -278,24 +287,17 @@ public:
   }
   // safely insert an item
   // returns bool representing whether insertion
-  // actually happened, since we check again
-  // after acquiring lock to prevent
-  // double insertions
-  bool insert(int goal, int &left, int &right, cellData x) {
+  bool insert(int goal, cellData x) {
     bool wrote = false;
     int change = goal - idx;
-// left frontier
 #pragma omp critical
     {
+      // left frontier
       if (change == -1) {
         // insert if it isn't there
-        int left_end;
-#pragma omp atomic read
-        left_end = left;
-        if (goal == left_end - 1) {
+        if (goal == cache->get_left() - 1) {
           cache->container.push_front(x);
-#pragma omp atomic update
-          left -= 1;
+          cache->inc_left();
           wrote = true;
         }
         // walk this instance
@@ -304,13 +306,9 @@ public:
       } else if (change == 1) {
         // right frontier
         // insert if not there
-        int right_end;
-#pragma omp atomic read
-        right_end = right;
-        if (goal == right_end + 1) {
+        if (goal == cache->get_right() + 1) {
           cache->container.push_back(x);
-#pragma omp atomic update
-          right += 1;
+          cache->inc_right();
           wrote = true;
         }
         // walk this instance
@@ -340,8 +338,6 @@ public:
   // initialise cache
   Simulator(long double x) : cache_ptr(std::make_shared<cell_cache>(x)) {
     start = x;
-    cache_left = 0;
-    cache_right = 0;
   }
   // Holds results
   std::vector<long double> results;
@@ -349,7 +345,7 @@ public:
   void simulate(long double t, int rounds = ROUNDS) {
 #pragma omp parallel for
     for (int idx = 0; idx < rounds; idx++) {
-      run_sim(t, idx, rounds, cache_left, cache_right);
+      run_sim(t, idx);
     }
     // Write results to "res.csv"
     std::ofstream output_file("res.csv");
@@ -361,20 +357,14 @@ public:
   }
 
 private:
-  // threadsafe printing
-  std::mutex cout_m;
-  // threadsafe writing of results
-  std::mutex results_m;
   // Holds computed data for cells we have visited
   std::shared_ptr<cell_cache> cache_ptr;
-  int cache_left;
-  int cache_right;
   // computes values
-  cellData get_data(cell_cache_walker &walker, long double point, int grid_idx,
-                    int &left, int &right) {
+  cellData get_data(cell_cache_walker &walker, long double point,
+                    int grid_idx) {
     // If the point is in our cache
     // (we already visited it and have data)
-    if (walker.contains(grid_idx, left, right)) {
+    if (walker.contains(grid_idx)) {
       return walker.at(grid_idx);
     }
     // If the point is not in our cache
@@ -386,18 +376,18 @@ private:
     CellDataCalculator calc(lr.left, lr.right, point);
     cellData out = calc.compute_cell_data();
     // write computed data to cache
-    walker.insert(grid_idx, left, right, out);
+    walker.insert(grid_idx, out);
 
     // return computed value
     return out;
   }
   // take a step from a point
   increment next_point(cell_cache_walker &walker, long double point,
-                       std::mt19937 &rng, int grid_idx, int &left, int &right) {
+                       std::mt19937 &rng, int grid_idx) {
     // get neighbours
     cell lr = get_adjacent(point);
     // get data
-    cellData point_data = get_data(walker, point, grid_idx, left, right);
+    cellData point_data = get_data(walker, point, grid_idx);
     // simulate step
     std::bernoulli_distribution d(point_data.prob_right);
     if (d(rng)) {
@@ -408,11 +398,10 @@ private:
       return increment{lr.left, point_data.time_left, -1};
     }
   }
-  // run 1 thread (may do multiple walks per thread)
+  // run 1 thread
   // takes start point
   // idx represents iteration number (for logging)
-  void run_sim(long double t, int idx, int thread_rounds, int &left,
-               int &right) {
+  void run_sim(long double t, int idx) {
 #ifdef _DEBUG
 #pragma omp critical
     std::cout << idx << " started\n";
@@ -432,7 +421,7 @@ private:
     // run algorithm
     while (t_cur < t) {
       // get next point
-      increment inc = next_point(walker, cur, rng, grid_idx, left, right);
+      increment inc = next_point(walker, cur, rng, grid_idx);
       // update position in grid and increment time
       cur = inc.next_point;
       grid_idx += inc.change_grid_idx;
