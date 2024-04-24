@@ -42,8 +42,7 @@ long double b(long double x) { return 0; }
 // args: point in grid
 // returns: two adjacent points
 cell get_adjacent(long double point) {
-  return cell{std::round((point - 0.02) * 100.0) / 100.0,
-              std::round((point + 0.02) * 100.0) / 100.0};
+  return cell{point - 0.02, point + 0.02};
 }
 // =============================
 
