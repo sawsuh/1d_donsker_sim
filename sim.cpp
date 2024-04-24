@@ -264,6 +264,7 @@ class cell_cache_walker {
 public:
   // uses a shared pointer to the cache
   cell_cache_walker(std::shared_ptr<cell_cache> c) : cache(c) {
+    // start at start point
     it = cache->get_iter();
     idx = 0;
   }
@@ -277,7 +278,9 @@ public:
   // (and walk there)
   cellData at(int goal) {
     int change = goal - idx;
+    // increment internal position
     idx += change;
+    // update iterator
     if (change == 1) {
       return *(++it);
     } else if (change == -1) {
@@ -293,13 +296,10 @@ public:
   // after acquiring lock to prevent
   // double insertions
   bool insert(int goal, cellData x) {
-    if (abs(goal - idx) > 1) {
-      throw std::out_of_range("inserting too far away");
-    }
     bool wrote = false;
-    int change = goal - idx;
     // get lock for thread safety
     std::unique_lock<std::mutex> lk(cache->write_m);
+    int change = goal - idx;
     // left frontier
     if (change == -1) {
       // insert if it isn't there
@@ -423,26 +423,31 @@ private:
       return increment{lr.left, point_data.time_left, -1};
     }
   }
-  // run 1 thread
+  // run 1 thread (may do multiple walks per thread)
   // takes start point
   // idx represents iteration number (for logging)
   void run_sim(long double t, int idx, int thread_rounds) {
+#ifdef _DEBUG
+    // get lock for printing
     std::unique_lock<std::mutex> lk(cout_m, std::defer_lock);
+#endif
     for (int j = 0; j < thread_rounds; j++) {
 #ifdef _DEBUG
       lk.lock();
       std::cout << idx * thread_rounds + j << " started\n";
       lk.unlock();
 #endif
+      // initialise cache walker for this walk
       cell_cache_walker walker(cache_ptr);
 
+      // initialise data
       long double cur = start;
       long double t_cur = 0;
+      int grid_idx = 0;
+
       // random device for random number generation
       std::random_device rd;
       std::mt19937 rng{rd()};
-
-      int grid_idx = 0;
 
       // run algorithm
       while (t_cur < t) {
@@ -459,7 +464,7 @@ private:
       lk.unlock();
 #endif
       // write result
-      std::unique_lock<std::mutex> lk(results_m);
+      std::unique_lock<std::mutex> lk_r(results_m);
       results.push_back(cur);
     }
   }
