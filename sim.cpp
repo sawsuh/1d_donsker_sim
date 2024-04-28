@@ -8,6 +8,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <omp.h>
 #include <random>
 #include <set>
 #include <stdexcept>
@@ -27,7 +28,7 @@ struct cell {
 // Number of simulations
 const int ROUNDS = 10000;
 // Interval to use for numerical integration
-const long double INTEGRATION_INC = 0.00001;
+const long double INTEGRATION_INC = 0.000001;
 // Starting point in grid
 const long double START = 0;
 // Time at which we want to sample X_t
@@ -203,25 +204,21 @@ struct increment {
 };
 // this is a structure for storing data we compute correponding to points in the
 // grid
-class cell_cache {
+template <class DT> class cell_cache {
 public:
   // actually holds the data
-  std::list<cellData> container;
+  std::list<DT> container;
   // initialise with data for the start point
-  cell_cache(long double start) {
+  cell_cache(DT init_val) {
     left = 0;
     right = 0;
-    // get neighbours
-    cell lr = get_adjacent(start);
-    // Compute values
-    CellDataCalculator calc(lr.left, lr.right, start);
     // store
-    container.push_back(calc.compute_cell_data());
+    container.push_back(init_val);
     // save iterator to start
     it = container.begin();
   }
   // return iterator to start
-  std::list<cellData>::iterator get_iter() { return it; }
+  typename std::list<DT>::iterator get_iter() { return it; }
   // get left endpoint
   int get_left() {
     int l;
@@ -249,15 +246,15 @@ public:
 
 private:
   // persistent iterator to start point
-  std::list<cellData>::iterator it;
+  typename std::list<DT>::iterator it;
   // endpoints
   int left, right;
 };
 // object that each thread uses to walk the cache
-class cell_cache_walker {
+template <class DT> class cell_cache_walker {
 public:
   // uses a shared pointer to the cache
-  cell_cache_walker(std::shared_ptr<cell_cache> c) : cache(c) {
+  cell_cache_walker(std::shared_ptr<cell_cache<DT>> c) : cache(c) {
     // start at start point
     it = cache->get_iter();
     idx = 0;
@@ -270,7 +267,7 @@ public:
   // return an item that is 0 or 1 steps away
   // (and walk there)
   // assumes we already checked existence
-  cellData at(int goal) {
+  DT at(int goal) {
     int change = goal - idx;
     // increment internal position
     idx += change;
@@ -286,7 +283,7 @@ public:
   }
   // safely insert an item
   // returns bool representing whether insertion
-  bool insert(int goal, cellData x) {
+  bool insert(int goal, DT x) {
     bool wrote = false;
     int change = goal - idx;
     // left frontier
@@ -325,9 +322,9 @@ public:
 
 private:
   // stores actual cache
-  std::shared_ptr<cell_cache> cache;
+  std::shared_ptr<cell_cache<DT>> cache;
   // iterator that we walk around
-  std::list<cellData>::iterator it;
+  typename std::list<DT>::iterator it;
   // tracks where in the grid our iterator is
   int idx;
 };
@@ -338,7 +335,13 @@ public:
   // Start point
   long double start;
   // initialise cache
-  Simulator(long double x) : cache_ptr(std::make_shared<cell_cache>(x)) {
+  Simulator(long double x)
+      : cache_ptr(std::make_shared<cell_cache<cellData>>([](long double x) {
+          cell lr = get_adjacent(x);
+          CellDataCalculator calc(lr.left, lr.right, x);
+          return calc.compute_cell_data();
+        }(x))),
+        grid_ptr(std::make_shared<cell_cache<cell>>(get_adjacent(x))) {
     start = x;
   }
   // Holds results
@@ -360,10 +363,12 @@ public:
 
 private:
   // Holds computed data for cells we have visited
-  std::shared_ptr<cell_cache> cache_ptr;
+  std::shared_ptr<cell_cache<cellData>> cache_ptr;
+  // Holds grid points (to try and prevent floating point errors)
+  std::shared_ptr<cell_cache<cell>> grid_ptr;
   // computes values
-  cellData get_data(cell_cache_walker &walker, long double point,
-                    int grid_idx) {
+  cellData get_data(cell_cache_walker<cellData> &walker, long double point,
+                    int grid_idx, cell lr) {
     // If the point is in our cache
     // (we already visited it and have data)
     if (walker.contains(grid_idx)) {
@@ -371,10 +376,6 @@ private:
     }
     // If the point is not in our cache
     // Compute the necessary data
-
-    // get neighbours
-    cell lr = get_adjacent(point);
-    // Compute values
     CellDataCalculator calc(lr.left, lr.right, point);
     cellData out = calc.compute_cell_data();
     // write computed data to cache
@@ -384,12 +385,25 @@ private:
     return out;
   }
   // take a step from a point
-  increment next_point(cell_cache_walker &walker, long double point,
-                       std::mt19937 &rng, int grid_idx) {
+  increment next_point(cell_cache_walker<cellData> &walker, long double point,
+                       std::mt19937 &rng, int grid_idx,
+                       cell_cache_walker<cell> &grid_idx_walker) {
     // get neighbours
-    cell lr = get_adjacent(point);
+    //
+    // cell lr = grid_idx_walker;
+    cell lr;
+    if (grid_idx_walker.contains(grid_idx)) {
+      lr = grid_idx_walker.at(grid_idx);
+    } else {
+      // If the point is not in our cache
+      // Compute the necessary data
+      lr = get_adjacent(point);
+      // write computed data to cache
+      grid_idx_walker.insert(grid_idx, lr);
+    }
+
     // get data
-    cellData point_data = get_data(walker, point, grid_idx);
+    cellData point_data = get_data(walker, point, grid_idx, lr);
     // simulate step
     std::bernoulli_distribution d(point_data.prob_right);
     if (d(rng)) {
@@ -409,7 +423,9 @@ private:
     std::cout << idx << " started\n";
 #endif
     // initialise cache walker for this walk
-    cell_cache_walker walker(cache_ptr);
+    cell_cache_walker<cellData> walker(cache_ptr);
+    // initialise grid point walker for this walk
+    cell_cache_walker<cell> grid_idx_walker(grid_ptr);
 
     // initialise data
     long double cur = start;
@@ -423,7 +439,7 @@ private:
     // run algorithm
     while (t_cur < t) {
       // get next point
-      increment inc = next_point(walker, cur, rng, grid_idx);
+      increment inc = next_point(walker, cur, rng, grid_idx, grid_idx_walker);
       // update position in grid and increment time
       cur = inc.next_point;
       grid_idx += inc.change_grid_idx;
