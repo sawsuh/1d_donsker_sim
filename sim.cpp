@@ -1,19 +1,9 @@
-#include <algorithm>
-#include <cmath>
-#include <csignal>
-#include <execinfo.h>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <list>
-#include <map>
 #include <memory>
 #include <random>
-#include <set>
-#include <stdexcept>
-#include <stdlib.h>
-#include <unistd.h>
-#include <unordered_map>
 
 // represents left or right exit
 enum PlusMinus { plus, minus };
@@ -28,6 +18,8 @@ struct cell {
 const int ROUNDS = 10000;
 // Interval to use for numerical integration
 const long double INTEGRATION_INC = 0.00001;
+#if !(defined(_FIG1) || defined(_FIG2) || defined(_FIG3) || defined(_FIG4) ||  \
+      defined(_FIG5))
 // Starting point in grid
 const long double START = 0;
 // Time at which we want to sample X_t
@@ -35,15 +27,66 @@ const long double TIME = 1;
 // a
 long double a(long double x) { return 1; }
 // rho
-long double rho(long double x) { return (x < 0) ? 1 : 5; }
+long double rho(long double x) { return 1; }
 // b
 long double b(long double x) { return 0; }
 // GRID SPECIFICATION
 // args: point in grid
 // returns: two adjacent points
 cell get_adjacent(long double point) {
+  return cell{point - 0.01, point + 0.01};
+}
+#endif
+
+#if (defined(_FIG1) || defined(_FIG2) || defined(_FIG3))
+const long double START = 1;
+long double a(long double x) {
+  if (x < -1.5) {
+    return 1;
+  } else if (x < 0.5) {
+    return 2;
+  } else {
+    return 1;
+  }
+}
+long double rho(long double x) {
+  if (x < -0.5) {
+    return 1;
+  } else if (x < 0.5) {
+    return 0.5;
+  } else {
+    return 1;
+  }
+}
+long double b(long double x) { return 0; }
+cell get_adjacent(long double point) {
   return cell{point - 0.02, point + 0.02};
 }
+#endif
+#if defined(_FIG1)
+const long double TIME = 0.5;
+#elif defined(_FIG2)
+const long double TIME = 1;
+#elif defined(_FIG3)
+const long double TIME = 1.5;
+#endif
+#if (defined(_FIG4) || defined(_FIG5))
+const long double START = 0;
+const long double TIME = 1;
+long double b(long double x) { return 0; }
+cell get_adjacent(long double point) {
+  return cell{point - 0.05, point + 0.05};
+}
+#endif
+
+#if defined(_FIG4)
+long double a(long double x) { return (x < 0) ? 1 : 5; }
+long double rho(long double x) { return 1; }
+#elif defined(_FIG5)
+long double a(long double x) { return 1; }
+long double rho(long double x) { return (x < 0) ? 1 : 5; }
+#endif
+
 // =============================
 
 // data for a cell:
@@ -108,7 +151,7 @@ private:
     psi_values.push_back(0);
     long double integral = 0;
     long double y = left;
-    long double y_next;
+    long double y_next = left;
     // integrate step by step and store each step as the integral up to that
     // point
     while (y < right) {
@@ -132,7 +175,7 @@ private:
     s_values.push_back(0);
     long double integral = 0;
     long double y = left;
-    long double y_next;
+    long double y_next = left;
     // for each step
     while (y < right) {
       y_next = y + integration_inc;
@@ -292,7 +335,7 @@ public:
     // left frontier
     if (change == -1) {
       // insert if it isn't there
-#pragma omp critical
+#pragma omp critical(cache)
       {
         if (goal == cache->get_left() - 1) {
           cache->container.push_front(x);
@@ -306,7 +349,7 @@ public:
     } else if (change == 1) {
       // right frontier
       // insert if not there
-#pragma omp critical
+#pragma omp critical(cache)
       {
         if (goal == cache->get_right() + 1) {
           cache->container.push_back(x);
@@ -405,7 +448,7 @@ private:
   // idx represents iteration number (for logging)
   void run_sim(long double t, int idx) {
 #ifdef _DEBUG
-#pragma omp critical
+#pragma omp critical(cout)
     std::cout << idx << " started\n";
 #endif
     // initialise cache walker for this walk
@@ -430,11 +473,11 @@ private:
       t_cur += inc.delta_t;
     }
 #ifdef _DEBUG
-#pragma omp critical
+#pragma omp critical(cout)
     std::cout << idx << " finished at " << cur << "\n";
 #endif
 // write result
-#pragma omp critical
+#pragma omp critical(results)
     results.push_back(cur);
   }
 };
