@@ -31,15 +31,15 @@ const long double START = 0;
 // Time at which we want to sample X_t
 const long double TIME = 1;
 // a
-const long double a(const long double x) { return 1; }
+long double a(const long double x) { return 1; }
 // rho
-const long double rho(const long double x) { return 1; }
+long double rho(const long double x) { return 1; }
 // b
-const long double b(const long double x) { return 0; }
+long double b(const long double x) { return 0; }
 // GRID SPECIFICATION
 // args: point in grid
 // returns: two adjacent points
-const cell get_adjacent(const long double point) {
+cell get_adjacent(long double point) {
   return cell{point - 0.01, point + 0.01};
 }
 #endif
@@ -47,7 +47,7 @@ const cell get_adjacent(const long double point) {
 // defining params for each of the figs
 #if (defined(_FIG1) || defined(_FIG2) || defined(_FIG3))
 const long double START = 1;
-const long double a(long double x) {
+long double a(long double x) {
   if (x < -1.5) {
     return 1;
   } else if (x < 0.5) {
@@ -56,7 +56,7 @@ const long double a(long double x) {
     return 1;
   }
 }
-const long double rho(long double x) {
+long double rho(long double x) {
   if (x < -0.5) {
     return 1;
   } else if (x < 0.5) {
@@ -65,8 +65,8 @@ const long double rho(long double x) {
     return 1;
   }
 }
-const long double b(long double x) { return 0; }
-const cell get_adjacent(long double point) {
+long double b(long double x) { return 0; }
+cell get_adjacent(long double point) {
   return cell{point - 0.02, point + 0.02};
 }
 #endif
@@ -80,18 +80,18 @@ const long double TIME = 1.5;
 #if (defined(_FIG4) || defined(_FIG5))
 const long double START = 0;
 const long double TIME = 1;
-const long double b(long double x) { return 0; }
-const cell get_adjacent(long double point) {
+long double b(long double x) { return 0; }
+cell get_adjacent(long double point) {
   return cell{point - 0.05, point + 0.05};
 }
 #endif
 
 #if defined(_FIG4)
-const long double a(long double x) { return (x < 0) ? 1 : 5; }
-const long double rho(long double x) { return 1; }
+long double a(long double x) { return (x < 0) ? 1 : 5; }
+long double rho(long double x) { return 1; }
 #elif defined(_FIG5)
-const long double a(long double x) { return 1; }
-const long double rho(long double x) { return (x < 0) ? 1 : 5; }
+long double a(long double x) { return 1; }
+long double rho(long double x) { return (x < 0) ? 1 : 5; }
 #endif
 
 // =============================
@@ -122,7 +122,7 @@ public:
   CellDataCalculator(long double l, long double r, long double y)
       : left(l), right(r), x(y), integration_inc(INTEGRATION_INC) {}
   // calculate data (exit times and probabilities)
-  const cellData compute_cell_data() {
+  cellData compute_cell_data() {
     // precompute table of psi values
     gen_psi_table();
     // precompute table of s values
@@ -145,7 +145,7 @@ private:
   // arg: point
   // returns: index in table corresponding to the point (starts at 0)
   // (for table access)
-  const int get_index(long double x) const {
+  int get_index(long double x) const {
     return round((x - left) / integration_inc);
   }
   // progressively precompute values of psi in one pass
@@ -170,9 +170,7 @@ private:
     }
   }
   // all the necessary values should be stored in cache, throw an error if not
-  const long double psi(long double x) const {
-    return psi_values.at(get_index(x));
-  }
+  long double psi(long double x) const { return psi_values.at(get_index(x)); }
   // precompute values of s, same strategy as psi
   // (do integral in one pass, storing each step as the integral to that point)
   void gen_s_table() {
@@ -195,13 +193,13 @@ private:
     }
   }
   // all values should be precomputed, if not throw an error
-  const long double s(long double x) const { return s_values.at(get_index(x)); }
+  long double s(long double x) const { return s_values.at(get_index(x)); }
   // Now that we have s, we can compute v0plus
-  const long double v0plus(long double x) const { return s(x) / s(right); }
+  long double v0plus(long double x) const { return s(x) / s(right); }
   // v0minus = 1-v0plus
-  const long double v0minus(long double x) const { return 1 - v0plus(x); }
+  long double v0minus(long double x) const { return 1 - v0plus(x); }
   // We can also express G using s
-  const long double G(long double x, long double y) const {
+  long double G(long double x, long double y) const {
     if (x <= y) {
       return 2 * (s(x) - s(left)) * (s(right) - s(y)) / (s(right) - s(left));
     } else {
@@ -211,7 +209,7 @@ private:
   // We can use G together with psi and v0plus to compute v1plus
   // We only do this once so we don't need to cache
   // We use the trapezoid rule
-  const long double v1plus(long double x) const {
+  long double v1plus(long double x) const {
     long double integral = 0;
     for (int y_idx = 0; y_idx < get_index(right); y_idx++) {
       long double y = y_idx * integration_inc + left;
@@ -227,7 +225,7 @@ private:
   // We can use G together with psi and v0minus to compute v1minus
   // We only do this once so we don't need to cache
   // We use the trapezoid rule
-  const long double v1minus(long double x) const {
+  long double v1minus(long double x) const {
     long double integral = 0;
     for (int y_idx = 0; y_idx < get_index(right); y_idx++) {
       long double y = y_idx * integration_inc + left;
@@ -269,9 +267,9 @@ public:
     it = container.begin();
   }
   // return iterator to start
-  const std::list<cellData>::iterator get_iter() const { return it; }
+  std::list<cellData>::iterator get_iter() const { return it; }
   // get left endpoint
-  const int get_left() const {
+  int get_left() const {
     int l;
     // atomic for thread safety
 #pragma omp atomic read
@@ -279,7 +277,7 @@ public:
     return l;
   }
   // get right endpoint
-  const int get_right() const {
+  int get_right() const {
     int r;
     // atomic for thread safety
 #pragma omp atomic read
@@ -318,13 +316,13 @@ public:
   // check if cache holds an item
   // left and right are the ends of the cache
   // these are already atomic so no race condition here
-  const bool contains(int goal) const {
+  bool contains(int goal) const {
     return (cache->get_left() <= goal) && (goal <= cache->get_right());
   }
   // return an item that is 0 or 1 steps away
   // (and walk there)
   // assumes we already checked existence
-  const cellData at(int goal) {
+  cellData at(int goal) {
     const int change = goal - idx;
     // increment internal position
     idx += change;
@@ -412,8 +410,8 @@ private:
   // Holds computed data for cells we have visited
   const std::shared_ptr<cell_cache> cache_ptr;
   // computes values
-  const cellData get_data(cell_cache_walker &walker, long double point,
-                          int grid_idx) const {
+  cellData get_data(cell_cache_walker &walker, long double point,
+                    int grid_idx) const {
     // If the point is in our cache
     // (we already visited it and have data)
     if (walker.contains(grid_idx)) {
@@ -434,8 +432,8 @@ private:
     return out;
   }
   // take a step from a point
-  const increment next_point(cell_cache_walker &walker, long double point,
-                             std::mt19937 &rng, int grid_idx) const {
+  increment next_point(cell_cache_walker &walker, long double point,
+                       std::mt19937 &rng, int grid_idx) const {
     // get neighbours
     const cell lr = get_adjacent(point);
     // get data
@@ -453,7 +451,7 @@ private:
   // run 1 thread
   // takes start point
   // idx represents iteration number (for logging)
-  const long double run_sim(long double t, int idx) const {
+  long double run_sim(long double t, int idx) const {
 #ifdef _DEBUG
 #pragma omp critical(cout)
     std::cout << idx << " started\n";
