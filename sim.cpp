@@ -5,13 +5,6 @@
 #include <memory>
 #include <random>
 
-#pragma omp declare reduction(                                                 \
-        vec_concat : std::vector<long double> : omp_out.insert(                \
-                omp_out.end(), omp_in.begin(), omp_in.end()))                  \
-    initializer(omp_priv = omp_orig)
-
-// represents left or right exit
-enum PlusMinus { plus, minus };
 // cell: contains values of left and right neighbours
 struct cell {
   const long double left, right;
@@ -22,7 +15,7 @@ struct cell {
 // Number of simulations
 const int ROUNDS = 10000;
 // Interval to use for numerical integration
-const long double INTEGRATION_INC = 0.00001;
+const long double INTEGRATION_INC = 0.000001;
 // default: Brownian motion
 #if !(defined(_FIG1) || defined(_FIG2) || defined(_FIG3) || defined(_FIG4) ||  \
       defined(_FIG5))
@@ -156,7 +149,7 @@ private:
     psi_values.push_back(0);
     long double integral = 0;
     long double y = left;
-    long double y_next = left;
+    long double y_next;
     // integrate step by step and store each step as the integral up to that
     // point
     while (y < right) {
@@ -180,7 +173,7 @@ private:
     s_values.push_back(0);
     long double integral = 0;
     long double y = left;
-    long double y_next = left;
+    long double y_next;
     // for each step
     while (y < right) {
       y_next = y + integration_inc;
@@ -393,6 +386,10 @@ public:
   void simulate(long double t, int rounds = ROUNDS) const {
     // multithread this
     std::vector<long double> results;
+#pragma omp declare reduction(                                                 \
+        vec_concat : std::vector<long double> : omp_out.insert(                \
+                omp_out.end(), omp_in.begin(), omp_in.end()))                  \
+    initializer(omp_priv = omp_orig)
 #pragma omp parallel for reduction(vec_concat : results)
     for (int idx = 0; idx < rounds; idx++) {
       results.push_back(run_sim(t, idx));
