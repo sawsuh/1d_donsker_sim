@@ -4,6 +4,8 @@
 #include <list>
 #include <memory>
 #include <random>
+#include <stdexcept>
+#include <vector>
 
 // cell: contains values of left and right neighbours
 struct cell {
